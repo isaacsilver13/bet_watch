@@ -1,9 +1,10 @@
+import hmac
 import logging
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from app.config import ProviderMode, Settings, load_settings
 from app.domain.models import (
@@ -25,6 +26,7 @@ from app.providers.the_odds_api import TheOddsApiProvider
 from app.providers.the_odds_api.client import TheOddsApiClient
 from app.storage.database import create_engine, create_session_factory
 from app.storage.repository import OddsRepository
+from app.throttle import SlidingWindowLimiter
 
 router = APIRouter(prefix="/api/v1")
 logger = logging.getLogger(__name__)
@@ -66,6 +68,44 @@ if settings.persistence_enabled:
     repository = OddsRepository(create_session_factory(create_engine(settings)))
 
 
+# Expensive refreshes (force_refresh / include_props) are admin-only and rate limited.
+# Per client: a short burst guard. Global: a hard budget per window, independent of cache state.
+_client_limiters: dict[str, SlidingWindowLimiter] = {}
+_CLIENT_LIMIT = 2
+_CLIENT_WINDOW_SECONDS = 600
+_budget = SlidingWindowLimiter(
+    settings.admin_refresh_budget, settings.admin_refresh_budget_window_seconds
+)
+
+
+def _is_admin(request: Request) -> bool:
+    """True when the request carries the admin secret (constant-time compare).
+
+    With no secret configured only fixture mode (which never spends) is treated as admin so
+    local development keeps working; live mode fails closed.
+    """
+    secret = settings.admin_refresh_secret
+    if not secret:
+        return settings.provider_mode is ProviderMode.FIXTURE
+    supplied = request.headers.get("x-admin-token")
+    return bool(supplied) and hmac.compare_digest(supplied.encode(), secret.encode())
+
+
+def _client_key(request: Request) -> str:
+    fallback = request.client.host if request.client else "unknown"
+    return request.headers.get("fly-client-ip") or fallback
+
+
+def _allow_expensive_refresh(request: Request) -> bool:
+    """Per-client + global throttle. Only meaningful (and enforced) when live calls can spend."""
+    if settings.provider_mode is not ProviderMode.LIVE:
+        return True
+    limiter = _client_limiters.setdefault(
+        _client_key(request), SlidingWindowLimiter(_CLIENT_LIMIT, _CLIENT_WINDOW_SECONDS)
+    )
+    return limiter.allow() and _budget.allow()
+
+
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -85,23 +125,31 @@ async def status() -> dict[str, object]:
 
 
 @router.get("/health/metrics")
-async def health_metrics() -> dict[str, object]:
-    return {
+async def health_metrics(request: Request) -> dict[str, object]:
+    metrics: dict[str, object] = {
         "last_activity_at": getattr(provider, "last_refreshed_at", None),
         "data_freshness_at": getattr(provider, "last_refreshed_at", None),
         "event_count": getattr(provider, "cached_event_count", 0),
         "cache_hit": getattr(provider, "cache_hit", False),
-        "quota_remaining": getattr(provider, "quota_remaining", None),
     }
+    if _is_admin(request):  # provider quota is operational data, not for anonymous callers
+        metrics["quota_remaining"] = getattr(provider, "quota_remaining", None)
+    return metrics
 
 
 @router.get("/health/errors")
-async def health_errors() -> dict[str, object]:
+async def health_errors(request: Request) -> dict[str, object]:
+    # Fail closed: needs the admin secret even in fixture mode when one is configured, and is
+    # unreachable in live mode without one.
+    if not (settings.admin_refresh_secret and _is_admin(request)):
+        raise HTTPException(status_code=403, detail="Forbidden")
     return {"errors": recent_errors()}
 
 
 @router.get("/odds", response_model=ComparisonResponse)
 async def get_odds(
+    request: Request,
+    response: Response,
     sport: Optional[Sport] = Query(default=None),
     event_id: Optional[str] = Query(default=None, min_length=1),
     market_type: Optional[MarketType] = Query(default=None),
@@ -116,6 +164,26 @@ async def get_odds(
     ),
 ) -> ComparisonResponse:
     started_at = datetime.now(timezone.utc)
+    is_admin = _is_admin(request)
+    if force_refresh or include_props:
+        if not is_admin:
+            reason = "unauthorized"
+        elif not _allow_expensive_refresh(request):
+            reason = "throttled"
+        else:
+            reason = None
+            logger.warning(
+                "admin expensive refresh sport=%s force_refresh=%s include_props=%s client=%s",
+                sport.value if sport else "all",
+                force_refresh,
+                include_props,
+                _client_key(request),
+            )
+        if reason is not None:
+            # Serve the cached/saved snapshot instead of spending provider quota.
+            force_refresh = include_props = False
+            response.headers["X-Refresh-Ignored"] = reason
+    quota_remaining = getattr(provider, "quota_remaining", None) if is_admin else None
     if not force_refresh and not include_props and repository is not None and sport is not None:
         # Daily gate: the in-memory cache dies whenever Fly stops the machine, so
         # the last successful refresh recorded in the database is what actually
@@ -141,7 +209,7 @@ async def get_odds(
                                 status="configured",
                                 cache_hit=True,
                                 last_refreshed_at=last_success,
-                                quota_remaining=getattr(provider, "quota_remaining", None),
+                                quota_remaining=quota_remaining,
                             )
                         },
                         events=scope_comparisons(
@@ -214,7 +282,7 @@ async def get_odds(
                     if provider_error
                     else getattr(provider, "last_error_type", None)
                 ),
-                quota_remaining=getattr(provider, "quota_remaining", None),
+                quota_remaining=quota_remaining,
             )
         },
         events=list(comparisons),

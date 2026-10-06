@@ -279,10 +279,8 @@ def test_health_metrics_reports_provider_state(monkeypatch) -> None:
     assert "quota_remaining" in payload
 
 
-def test_health_errors_returns_a_list(monkeypatch) -> None:
-    response = client.get("/api/v1/health/errors")
-    assert response.status_code == 200
-    assert isinstance(response.json()["errors"], list)
+def test_health_errors_is_closed_without_admin_secret() -> None:
+    assert client.get("/api/v1/health/errors").status_code == 403
 
 
 def test_provider_selection_uses_the_odds_api_key(monkeypatch) -> None:
@@ -332,16 +330,6 @@ def test_odds_route_reports_error_when_provider_fails_and_nothing_was_saved(
     assert body["events"] == []
     assert body["provider_status"]["failing"] == "error"
     assert body["provider_details"]["failing"]["stale"] is False
-
-
-def test_logged_errors_show_up_in_health_errors() -> None:
-    import logging
-
-    logging.getLogger("app.api.routes").error("odds fetch failed error_type=test")
-
-    errors = client.get("/api/v1/health/errors").json()["errors"]
-
-    assert any("odds fetch failed error_type=test" in entry["message"] for entry in errors)
 
 
 class RecordingProvider(FailingProvider):

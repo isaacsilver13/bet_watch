@@ -41,6 +41,9 @@ class Settings:
     provider_timeout_seconds: float
     provider_max_retries: int
     provider_backoff_seconds: float
+    admin_refresh_secret: Optional[str] = None
+    admin_refresh_budget: int = 4
+    admin_refresh_budget_window_seconds: int = 86400
 
 
 def load_settings() -> Settings:
@@ -67,4 +70,9 @@ def load_settings() -> Settings:
         provider_timeout_seconds=float(_setting("PROVIDER_TIMEOUT_SECONDS", "15")),
         provider_max_retries=int(_setting("PROVIDER_MAX_RETRIES", "2")),
         provider_backoff_seconds=float(_setting("PROVIDER_BACKOFF_SECONDS", "0.5")),
+        admin_refresh_secret=_setting("ADMIN_REFRESH_SECRET", "") or None,
+        admin_refresh_budget=int(_setting("ADMIN_REFRESH_BUDGET", "4")),
+        admin_refresh_budget_window_seconds=int(
+            _setting("ADMIN_REFRESH_BUDGET_WINDOW_SECONDS", "86400")
+        ),
     )

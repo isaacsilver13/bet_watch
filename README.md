@@ -101,6 +101,17 @@ The comparison board includes a refresh action on each event. It refreshes
 only the currently selected market for that event and merges the result into
 the existing board, leaving the other events and markets in place.
 
+### Paid-request controls
+
+`force_refresh=true` and `include_props=true` can spend provider quota, so they only
+take effect with the `X-Admin-Token` header matching `ADMIN_REFRESH_SECRET`. Anonymous
+requests are still answered (200) from the cache / last saved snapshot, with an
+`X-Refresh-Ignored: unauthorized` response header. In live mode with no secret
+configured these actions are disabled. Admin refreshes are throttled per client and by a
+global budget (`ADMIN_REFRESH_BUDGET` per `ADMIN_REFRESH_BUDGET_WINDOW_SECONDS`, both
+process-local); throttled calls get `X-Refresh-Ignored: throttled`. `/health/errors`
+(redacted) and quota figures require the same header; `/health` and `/status` stay public.
+
 There is no automated bet placement or sportsbook account integration.
 
 ### Frontend
