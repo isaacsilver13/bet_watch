@@ -77,7 +77,7 @@ class TheOddsApiProvider:
                 if not raw_payload:
                     return comparison
                 prop_offers = self._normalize_offers(
-                    raw_payload, comparison.event.id, datetime.now(timezone.utc)
+                    raw_payload, comparison.event.id, _snapshot_time(comparison)
                 )
                 return EventComparison(
                     event=comparison.event, offers=[*comparison.offers, *prop_offers]
@@ -140,6 +140,12 @@ class TheOddsApiProvider:
                         )
                     )
         return offers
+
+
+def _snapshot_time(comparison: EventComparison) -> datetime:
+    # Props share the base offers' observed_at so a saved snapshot (newest observed_at per event)
+    # contains both, not just the later-stamped props.
+    return max((o.observed_at for o in comparison.offers), default=datetime.now(timezone.utc))
 
 
 def american_to_decimal(price: int) -> float:

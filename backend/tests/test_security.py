@@ -163,3 +163,12 @@ def test_event_scoped_props_only_fetch_the_requested_event():
     )
     assert client_.requested_prop_event_ids == ["event-nfl-2"]
     assert len(only) == 1
+
+
+def test_props_share_the_base_observation_time():
+    payload = json.loads(FIXTURE_PATH.read_text())
+    from tests.test_the_odds_api import FakeTheOddsApiClient
+
+    provider = TheOddsApiProvider(FakeTheOddsApiClient(payload))
+    (comparison,) = asyncio.run(provider.get_comparisons(Sport.NFL, include_player_props=True))[:1]
+    assert len({o.observed_at for o in comparison.offers}) == 1
