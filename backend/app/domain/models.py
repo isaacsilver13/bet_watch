@@ -88,3 +88,45 @@ class ComparisonResponse(BaseModel):
 class HistoryResponse(BaseModel):
     event_id: str
     offers: list[Offer] = Field(default_factory=list)
+
+
+class MatchStatus(str, Enum):
+    MATCHED = "matched"
+    UNMATCHED = "unmatched"
+    AMBIGUOUS = "ambiguous"
+
+
+class PredictionContract(BaseModel):
+    """A prediction-market contract. Prices are native 0-1 probabilities, never sportsbook odds."""
+
+    model_config = ConfigDict(frozen=True)
+
+    venue: str
+    contract_id: str
+    source_event_id: str
+    title: str
+    outcome: str
+    url: str
+    rules: str
+    probability: Optional[float] = Field(default=None, ge=0, le=1)
+    best_bid: Optional[float] = Field(default=None, ge=0, le=1)
+    best_ask: Optional[float] = Field(default=None, ge=0, le=1)
+    spread: Optional[float] = None
+    bid_size: Optional[float] = None
+    ask_size: Optional[float] = None
+    volume: Optional[float] = None
+    open_interest: Optional[float] = None
+    status: str
+    close_time: Optional[datetime] = None
+    observed_at: datetime
+    match_status: MatchStatus
+    match_reason: str
+    event_id: Optional[str] = None  # canonical sportsbook event id when matched
+    matched_selection: Optional[str] = None
+
+
+class PredictionMarketsResponse(BaseModel):
+    generated_at: datetime
+    provider_status: dict[str, str]
+    provider_details: dict[str, ProviderDetails] = Field(default_factory=dict)
+    contracts: list[PredictionContract] = Field(default_factory=list)

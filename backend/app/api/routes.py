@@ -12,6 +12,7 @@ from app.domain.models import (
     EventComparison,
     HistoryResponse,
     MarketType,
+    PredictionMarketsResponse,
     ProviderDetails,
     Sport,
 )
@@ -21,6 +22,8 @@ from app.providers.base import OddsProvider
 from app.providers.cache import CachedOddsProvider
 from app.providers.errors import OddsProviderError
 from app.providers.fixture import FixtureOddsProvider
+from app.providers.kalshi.adapter import KalshiFixtureClient, KalshiProvider
+from app.providers.kalshi.client import KalshiClient
 from app.providers.stub import EmptyOddsProvider
 from app.providers.the_odds_api import TheOddsApiProvider
 from app.providers.the_odds_api.client import TheOddsApiClient
@@ -59,7 +62,19 @@ def build_provider(settings: Optional[Settings] = None) -> OddsProvider:
     return EmptyOddsProvider()
 
 
+def build_kalshi(settings: Settings) -> Optional[KalshiProvider]:
+    if not settings.kalshi_enabled:
+        return None
+    client = (
+        KalshiClient(timeout=settings.provider_timeout_seconds)
+        if settings.provider_mode is ProviderMode.LIVE
+        else KalshiFixtureClient()
+    )
+    return KalshiProvider(client, ttl_seconds=settings.kalshi_cache_ttl_seconds)
+
+
 settings = load_settings()
+kalshi = build_kalshi(settings)
 provider: OddsProvider = CachedOddsProvider(
     build_provider(settings),
     ttl_seconds=settings.cache_ttl_seconds,
@@ -330,6 +345,39 @@ def _log_fetch(
             fields,
             error,
         )
+
+
+@router.get("/prediction-markets", response_model=PredictionMarketsResponse)
+async def get_prediction_markets(sport: Sport = Query()) -> PredictionMarketsResponse:
+    """Read-only prediction-market contracts. Kept off /odds so they can never enter the
+    sportsbook grid or its best-price logic; a Kalshi failure cannot affect /odds."""
+    now = datetime.now(timezone.utc)
+    if kalshi is None:
+        return PredictionMarketsResponse(generated_at=now, provider_status={"kalshi": "disabled"})
+    # Match against sportsbook events we already hold; never trigger a paid fetch here.
+    events = getattr(provider, "cached_events", lambda _sport: [])(sport)
+    if not events and repository is not None:
+        events = [c.event for c in await repository.latest_comparisons(provider.name, sport)]
+    try:
+        contracts = await kalshi.get_contracts(sport, events)
+    except OddsProviderError as error:
+        logger.error("kalshi fetch failed error_type=%s detail=%s", error.error_type, error)
+        contracts = []
+    status = kalshi.status(sport)
+    return PredictionMarketsResponse(
+        generated_at=now,
+        provider_status={kalshi.name: status},
+        provider_details={
+            kalshi.name: ProviderDetails(
+                status=status,
+                cache_hit=kalshi.cache_hit,
+                stale=status == "stale",
+                last_refreshed_at=kalshi.last_refreshed_at(sport),
+                error_type=kalshi.last_error_type(sport),
+            )
+        },
+        contracts=contracts,
+    )
 
 
 @router.get("/history", response_model=HistoryResponse)

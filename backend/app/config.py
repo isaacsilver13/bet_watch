@@ -62,6 +62,8 @@ class Settings:
     provider_backoff_seconds: float
     odds_regions: str = "us"
     odds_bookmakers: tuple = ()  # non-empty allowlist wins over odds_regions
+    kalshi_enabled: bool = False
+    kalshi_cache_ttl_seconds: int = 300
     admin_refresh_secret: Optional[str] = None
     admin_refresh_budget: int = 4
     admin_refresh_budget_window_seconds: int = 86400
@@ -93,6 +95,8 @@ def load_settings() -> Settings:
         provider_backoff_seconds=float(_setting("PROVIDER_BACKOFF_SECONDS", "0.5")),
         odds_regions=_parse_regions(_setting("ODDS_REGIONS", "us")),
         odds_bookmakers=_parse_bookmakers(_setting("ODDS_BOOKMAKERS", "")),
+        kalshi_enabled=_setting("KALSHI_ENABLED", "false").strip().lower() == "true",
+        kalshi_cache_ttl_seconds=int(_setting("KALSHI_CACHE_TTL_SECONDS", "300")),
         admin_refresh_secret=_setting("ADMIN_REFRESH_SECRET", "") or None,
         admin_refresh_budget=int(_setting("ADMIN_REFRESH_BUDGET", "4")),
         admin_refresh_budget_window_seconds=int(

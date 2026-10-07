@@ -67,6 +67,14 @@ class CachedOddsProvider:
         }
         return len(event_ids)
 
+    def cached_events(self, sport: Sport) -> list:
+        """Events already in memory for `sport`. Never fetches (no quota spend)."""
+        seen: dict = {}
+        for (key_sport, *_), (_, comparisons) in self._cache.items():
+            if key_sport == sport:
+                seen.update({c.event.id: c.event for c in comparisons})
+        return list(seen.values())
+
     async def get_comparisons(
         self,
         sport: Optional[Sport] = None,
