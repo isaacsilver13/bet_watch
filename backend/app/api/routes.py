@@ -41,6 +41,8 @@ def build_provider(settings: Optional[Settings] = None) -> OddsProvider:
             TheOddsApiClient(
                 active_settings.the_odds_api_key,
                 timeout=active_settings.provider_timeout_seconds,
+                regions=active_settings.odds_regions,
+                bookmakers=active_settings.odds_bookmakers,
             )
         )
     if active_settings.odds_provider == "fixture":
@@ -121,6 +123,10 @@ async def status() -> dict[str, object]:
         "data_stale": provider_status == "stale",
         "generated_at": getattr(provider, "last_refreshed_at", None),
         "event_count": getattr(provider, "cached_event_count", 0),
+        "coverage": {
+            "regions": settings.odds_regions,
+            "bookmakers": list(settings.odds_bookmakers),
+        },
     }
 
 

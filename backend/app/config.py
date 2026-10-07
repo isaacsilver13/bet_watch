@@ -1,4 +1,5 @@
 import os
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -22,6 +23,24 @@ def _setting(name: str, default: str) -> str:
     return file_value if file_value is not None else default
 
 
+_VALID_REGIONS = {"us", "us2", "uk", "eu", "au"}
+_BOOKMAKER_KEY = re.compile(r"^[a-z0-9_]+$")
+
+
+def _parse_regions(raw: str) -> str:
+    regions = [r.strip().lower() for r in raw.split(",") if r.strip()]
+    if not regions or not set(regions) <= _VALID_REGIONS:
+        raise ValueError(f"ODDS_REGIONS must be a comma list of {sorted(_VALID_REGIONS)}")
+    return ",".join(dict.fromkeys(regions))
+
+
+def _parse_bookmakers(raw: str) -> tuple:
+    keys = tuple(dict.fromkeys(k.strip().lower() for k in raw.split(",") if k.strip()))
+    if not all(_BOOKMAKER_KEY.match(k) for k in keys):
+        raise ValueError("ODDS_BOOKMAKERS must be comma-separated provider keys like 'draftkings'")
+    return keys
+
+
 class ProviderMode(str, Enum):
     FIXTURE = "fixture"
     LIVE = "live"
@@ -41,6 +60,8 @@ class Settings:
     provider_timeout_seconds: float
     provider_max_retries: int
     provider_backoff_seconds: float
+    odds_regions: str = "us"
+    odds_bookmakers: tuple = ()  # non-empty allowlist wins over odds_regions
     admin_refresh_secret: Optional[str] = None
     admin_refresh_budget: int = 4
     admin_refresh_budget_window_seconds: int = 86400
@@ -70,6 +91,8 @@ def load_settings() -> Settings:
         provider_timeout_seconds=float(_setting("PROVIDER_TIMEOUT_SECONDS", "15")),
         provider_max_retries=int(_setting("PROVIDER_MAX_RETRIES", "2")),
         provider_backoff_seconds=float(_setting("PROVIDER_BACKOFF_SECONDS", "0.5")),
+        odds_regions=_parse_regions(_setting("ODDS_REGIONS", "us")),
+        odds_bookmakers=_parse_bookmakers(_setting("ODDS_BOOKMAKERS", "")),
         admin_refresh_secret=_setting("ADMIN_REFRESH_SECRET", "") or None,
         admin_refresh_budget=int(_setting("ADMIN_REFRESH_BUDGET", "4")),
         admin_refresh_budget_window_seconds=int(

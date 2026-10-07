@@ -73,6 +73,7 @@ def test_status_reports_unconfigured_provider_without_fetching_odds(monkeypatch)
         "data_stale": False,
         "generated_at": None,
         "event_count": 0,
+        "coverage": {"regions": "us", "bookmakers": []},
     }
 
 

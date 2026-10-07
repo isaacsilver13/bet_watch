@@ -72,7 +72,13 @@ class TheOddsApiClient:
         max_retries: int = 2,
         backoff_seconds: float = 0.5,
         transport: Optional[httpx.AsyncBaseTransport] = None,
+        regions: str = "us",
+        bookmakers: tuple = (),
     ) -> None:
+        # With a bookmaker allowlist, send only `bookmakers` (it overrides `regions`).
+        self.coverage = (
+            {"bookmakers": ",".join(bookmakers)} if bookmakers else {"regions": regions}
+        )
         self.api_key = api_key
         self.timeout = timeout
         self.max_retries = max_retries
@@ -87,7 +93,7 @@ class TheOddsApiClient:
             f"/sports/{sport_key(sport)}/odds",
             {
                 "apiKey": self.api_key,
-                "regions": "us",
+                **self.coverage,
                 "markets": ",".join(markets),
                 "oddsFormat": "american",
             },
@@ -111,7 +117,7 @@ class TheOddsApiClient:
             f"/sports/{sport_key(sport)}/events/{event_id}/odds",
             {
                 "apiKey": self.api_key,
-                "regions": "us",
+                **self.coverage,
                 "markets": ",".join(markets),
                 "oddsFormat": "american",
             },
