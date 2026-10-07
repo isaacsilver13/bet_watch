@@ -3,7 +3,19 @@
 **Repository:** `repos/betting_aggregator`
 
 **Date:** 2026-10-07
-**Status:** proposed — no live-provider calls or production changes in this plan
+**Status:** Slices A, C and D implemented 2026-10-07 on
+`feat/sportsbooks-prediction-markets`; Slice E (Polymarket) dropped from this plan.
+
+**Implementation rulings (deviations from the design below):**
+- Prediction contracts live behind a separate `/prediction-markets` endpoint and
+  `PredictionContract` model, not `venue_kind` on `Offer`. This makes "never affects sportsbook
+  best price" true by construction and avoids rewiring `/odds` around `ProviderRegistry`.
+  Slice B (registry as top-level provider, migration) was therefore not built.
+- No persistence or migration for contracts in v1: raw markets are TTL-cached in memory with
+  stale fallback. Add storage when contract price history is actually wanted.
+- No order-book call: Kalshi's market list already carries yes bid/ask and sizes.
+- Kalshi gives only the local game date, so matching is teams + date (0-1 days vs UTC start).
+- Real payload check: NFL ties resolve to $0.50 per team; rules text is carried on every contract.
 
 ## Outcome
 
