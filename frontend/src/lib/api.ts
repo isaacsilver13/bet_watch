@@ -1,4 +1,4 @@
-import type { ComparisonResponse, MarketType, Sport } from "../types";
+import type { ComparisonResponse, MarketType, PredictionMarketsResponse, Sport } from "../types";
 
 interface OddsRequestOptions {
   eventId?: string;
@@ -24,4 +24,12 @@ export async function fetchOdds(
   }
 
   return response.json() as Promise<ComparisonResponse>;
+}
+
+export async function fetchPredictionMarkets(sport: Sport): Promise<PredictionMarketsResponse> {
+  const response = await fetch(`/api/v1/prediction-markets?sport=${sport}`);
+  if (!response.ok) {
+    throw new Error(`Prediction markets request failed with status ${response.status}`);
+  }
+  return response.json() as Promise<PredictionMarketsResponse>;
 }

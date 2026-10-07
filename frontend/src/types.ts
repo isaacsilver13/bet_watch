@@ -81,3 +81,37 @@ export interface ComparisonResponse {
   provider_details: Record<string, ProviderDetails>;
   events: EventComparison[];
 }
+
+export type MatchStatus = "matched" | "unmatched" | "ambiguous";
+
+export interface PredictionContract {
+  venue: string;
+  contract_id: string;
+  source_event_id: string;
+  title: string;
+  outcome: string;
+  url: string;
+  rules: string;
+  probability: number | null;
+  best_bid: number | null;
+  best_ask: number | null;
+  spread: number | null;
+  bid_size: number | null;
+  ask_size: number | null;
+  volume: number | null;
+  open_interest: number | null;
+  status: string;
+  close_time: string | null;
+  observed_at: string;
+  match_status: MatchStatus;
+  match_reason: string;
+  event_id: string | null;
+  matched_selection: string | null;
+}
+
+export interface PredictionMarketsResponse {
+  generated_at: string;
+  provider_status: Record<string, string>;
+  provider_details: Record<string, ProviderDetails>;
+  contracts: PredictionContract[];
+}

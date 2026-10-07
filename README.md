@@ -15,6 +15,13 @@ Standalone NFL and NBA odds comparison app.
     provider-specific offer IDs remain attached to each observation.
 - Cached refreshes use single-flight locking, stale last-known-good fallback,
     retry/backoff, and configurable low-quota throttling.
+- Sportsbook coverage is configurable: `ODDS_BOOKMAKERS` (allowlist, wins) or `ODDS_REGIONS`;
+  selected coverage is shown in `/api/v1/status`.
+- Optional read-only Kalshi prediction-market contracts (`KALSHI_ENABLED=true`) are served from
+  `GET /api/v1/prediction-markets?sport=nfl|nba`, separate from `/odds` so they never enter the
+  sportsbook grid or best-price logic. Only two-sided game-winner contracts are matched to a
+  sportsbook game (teams + date); everything else is shown as unmatched behind a UI filter.
+  Fixture mode serves committed sample payloads and never contacts Kalshi.
 - `GET /api/v1/history?event_id=...&market_type=...` reads immutable historical
     observations when persistence is enabled.
 

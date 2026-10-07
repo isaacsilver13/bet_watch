@@ -680,3 +680,61 @@ footer {
   color: var(--muted);
   font-size: 0.85rem;
 }
+
+.prediction-panel,
+.other-predictions {
+  margin-top: 1rem;
+}
+.prediction-disclosure {
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+.prediction-list {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+.prediction-card {
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+.prediction-card-head {
+  display: flex;
+  gap: 0.5rem;
+}
+.venue-badge {
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  padding: 0 0.5rem;
+  text-transform: uppercase;
+}
+.prediction-title {
+  font-weight: 600;
+  margin: 0.4rem 0 0;
+}
+.prediction-stats {
+  display: grid;
+  gap: 0.25rem 0.75rem;
+  grid-template-columns: repeat(2, 1fr);
+  margin: 0.5rem 0;
+}
+.prediction-stats div {
+  display: flex;
+  justify-content: space-between;
+}
+.prediction-stats dt {
+  opacity: 0.7;
+}
+.prediction-stats dd {
+  margin: 0;
+}
+.prediction-match,
+.prediction-rules {
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+}

@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 
-import { fetchOdds } from "./lib/api";
+import { PredictionPanel } from "./components/PredictionMarkets";
+import { fetchOdds, fetchPredictionMarkets } from "./lib/api";
 import { GlassCard } from "./components/GlassCard";
 import {
   isPlayerPropMarket,
   type EventComparison,
   type MarketType,
   type Offer,
+  type PredictionContract,
   type ProviderDetails,
   type Sport,
 } from "./types";
@@ -261,6 +263,8 @@ function App() {
   const [secondaryMarket, setSecondaryMarket] = useState<MarketType | null>(null);
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchOdds>> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [contracts, setContracts] = useState<PredictionContract[]>([]);
+  const [showUnmatched, setShowUnmatched] = useState(false);
   const [refreshingKey, setRefreshingKey] = useState<string | null>(null);
   const needsPlayerProps = secondaryMarket !== null && isPlayerPropMarket(secondaryMarket);
 
@@ -286,6 +290,20 @@ function App() {
       cancelled = true;
     };
   }, [sport, needsPlayerProps]);
+
+  // Prediction markets load independently: a failure here never affects the sportsbook board.
+  // They wait for odds so the backend has sportsbook events cached to match against.
+  useEffect(() => {
+    let cancelled = false;
+    if (data) {
+      fetchPredictionMarkets(sport)
+        .then((next) => !cancelled && setContracts(next.contracts))
+        .catch(() => !cancelled && setContracts([]));
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [sport, data?.generated_at]);
 
   const providerStatus = Object.entries(data?.provider_status ?? {});
   const freshness = describeFreshness(
@@ -459,6 +477,12 @@ function App() {
                   />
                 ))}
               </div>
+              <PredictionPanel
+                contracts={contracts.filter(
+                  (c) => c.match_status === "matched" && c.event_id === comparison.event.id,
+                )}
+                heading="Prediction markets"
+              />
               {secondaryMarket && (
                 <section className="secondary-market-panel">
                   <div className="secondary-market-heading">
@@ -483,6 +507,26 @@ function App() {
           </div>
         )}
       </section>
+
+      {contracts.some((c) => c.match_status !== "matched") && (
+        <section className="other-predictions">
+          <label>
+            <input
+              checked={showUnmatched}
+              onChange={(event) => setShowUnmatched(event.target.checked)}
+              type="checkbox"
+            />{" "}
+            Show other prediction markets (not matched to a sportsbook game)
+          </label>
+          {showUnmatched && (
+            <PredictionPanel
+              contracts={contracts.filter((c) => c.match_status !== "matched")}
+              heading="Other prediction markets"
+              showMatch
+            />
+          )}
+        </section>
+      )}
 
       <footer>
         <span>Prices are informational only.</span>
