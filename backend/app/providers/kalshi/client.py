@@ -71,7 +71,10 @@ class KalshiClient:
                         f"Kalshi rejected the request with status {response.status_code}"
                     )
                 if response.status_code < 500:
-                    return response.json()
+                    try:
+                        return response.json()
+                    except ValueError as error:
+                        raise ProviderPayloadError("Kalshi returned a non-JSON body") from error
                 if last:
                     raise ProviderUpstreamError(
                         f"Kalshi returned upstream status {response.status_code}"

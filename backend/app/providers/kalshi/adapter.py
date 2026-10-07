@@ -152,11 +152,18 @@ class KalshiProvider:
 
     name = "kalshi"
 
-    def __init__(self, client: Union[KalshiClient, KalshiFixtureClient], ttl_seconds: int = 300):
+    def __init__(
+        self,
+        client: Union[KalshiClient, KalshiFixtureClient],
+        ttl_seconds: int = 300,
+        retry_after_seconds: int = 60,
+    ):
         self.client = client
         self.ttl = timedelta(seconds=ttl_seconds)
         self._cache: dict = {}  # sport -> (fetched_at, markets)
         self._lock = asyncio.Lock()
+        self.retry_after = timedelta(seconds=retry_after_seconds)
+        self._retry_at: dict = {}  # sport -> no upstream call before this time
         self._errors: dict = {}  # sport -> last error_type
         self.cache_hit = False
 
@@ -179,10 +186,16 @@ class KalshiProvider:
             self.cache_hit = bool(cached and now - cached[0] < self.ttl)
             if self.cache_hit:
                 return cached[1]
+            if self._errors.get(sport) and now < self._retry_at.get(sport, now):
+                # Backing off after a failure: don't hammer upstream while it is down.
+                if cached:
+                    return cached[1]
+                raise OddsProviderError(f"Kalshi unavailable ({self._errors[sport]})")
             try:
                 markets = await self.client.fetch_markets(sport)
-            except OddsProviderError as error:
-                self._errors[sport] = error.error_type
+            except Exception as error:  # any failure falls back to stale data, like the odds cache
+                self._errors[sport] = getattr(error, "error_type", type(error).__name__)
+                self._retry_at[sport] = now + self.retry_after
                 if cached:
                     return cached[1]
                 raise

@@ -360,8 +360,8 @@ async def get_prediction_markets(sport: Sport = Query()) -> PredictionMarketsRes
         events = [c.event for c in await repository.latest_comparisons(provider.name, sport)]
     try:
         contracts = await kalshi.get_contracts(sport, events)
-    except OddsProviderError as error:
-        logger.error("kalshi fetch failed error_type=%s detail=%s", error.error_type, error)
+    except Exception as error:  # prediction data is optional; never fail the request over it
+        logger.error("kalshi fetch failed type=%s detail=%s", kalshi.last_error_type(sport), error)
         contracts = []
     status = kalshi.status(sport)
     return PredictionMarketsResponse(

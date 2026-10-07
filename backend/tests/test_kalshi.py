@@ -199,3 +199,22 @@ def test_build_kalshi_respects_flag_and_mode() -> None:
     assert isinstance(fixture.client, KalshiFixtureClient)
     live = routes.build_kalshi(replace(base, kalshi_enabled=True, provider_mode=ProviderMode.LIVE))
     assert isinstance(live.client, KalshiClient)
+
+
+def test_non_json_body_is_a_typed_error_not_a_crash() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html>maintenance</html>")
+
+    with pytest.raises(ProviderPayloadError):
+        asyncio.run(_client(handler).fetch_markets(Sport.NFL))
+
+
+def test_failed_refresh_backs_off_instead_of_rehitting_upstream() -> None:
+    flaky = FlakyClient()
+    provider = KalshiProvider(flaky, ttl_seconds=0, retry_after_seconds=60)
+    asyncio.run(provider.get_contracts(Sport.NFL, []))
+    flaky.fail = True
+    for _ in range(3):
+        assert len(asyncio.run(provider.get_contracts(Sport.NFL, []))) == 2  # stale served
+    assert flaky.calls == 2  # one good fetch + one failure; no further upstream calls
+    assert provider.last_error_type(Sport.NFL) == "timeout"
