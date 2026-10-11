@@ -66,7 +66,12 @@ def build_kalshi(settings: Settings) -> Optional[KalshiProvider]:
     if not settings.kalshi_enabled:
         return None
     client = (
-        KalshiClient(timeout=settings.provider_timeout_seconds)
+        KalshiClient(
+            timeout=settings.provider_timeout_seconds,
+            max_retries=settings.provider_max_retries,
+            backoff_seconds=settings.provider_backoff_seconds,
+            base_url=settings.kalshi_base_url,
+        )
         if settings.provider_mode is ProviderMode.LIVE
         else KalshiFixtureClient()
     )
@@ -142,6 +147,17 @@ async def status() -> dict[str, object]:
             "regions": settings.odds_regions,
             "bookmakers": list(settings.odds_bookmakers),
         },
+        "capabilities": {
+            # A browser must never receive ADMIN_REFRESH_SECRET. Fixture mode is the only
+            # environment where anonymous expensive requests are safe and intentionally allowed.
+            "public_expensive_refresh": (
+                settings.provider_mode is ProviderMode.FIXTURE
+                and not settings.admin_refresh_secret
+            ),
+        },
+        "prediction_markets": {
+            "kalshi_enabled": kalshi is not None,
+        },
     }
 
 
@@ -155,6 +171,10 @@ async def health_metrics(request: Request) -> dict[str, object]:
     }
     if _is_admin(request):  # provider quota is operational data, not for anonymous callers
         metrics["quota_remaining"] = getattr(provider, "quota_remaining", None)
+        if kalshi is not None:
+            metrics["kalshi"] = {
+                sport.value: kalshi.metrics(sport) for sport in (Sport.NFL, Sport.NBA)
+            }
     return metrics
 
 
@@ -353,7 +373,17 @@ async def get_prediction_markets(sport: Sport = Query()) -> PredictionMarketsRes
     sportsbook grid or its best-price logic; a Kalshi failure cannot affect /odds."""
     now = datetime.now(timezone.utc)
     if kalshi is None:
-        return PredictionMarketsResponse(generated_at=now, provider_status={"kalshi": "disabled"})
+        return PredictionMarketsResponse(
+            generated_at=now,
+            provider_status={"kalshi": "disabled"},
+            contract_counts={
+                "total": 0,
+                "matched": 0,
+                "unmatched": 0,
+                "ambiguous": 0,
+                "rejected": 0,
+            },
+        )
     # Match against sportsbook events we already hold; never trigger a paid fetch here.
     events = getattr(provider, "cached_events", lambda _sport: [])(sport)
     if not events and repository is not None:
@@ -364,18 +394,33 @@ async def get_prediction_markets(sport: Sport = Query()) -> PredictionMarketsRes
         logger.error("kalshi fetch failed type=%s detail=%s", kalshi.last_error_type(sport), error)
         contracts = []
     status = kalshi.status(sport)
+    counts = kalshi.contract_counts(sport)
+    logger.info(
+        "prediction fetch source=kalshi sport=%s status=%s cache_hit=%s "
+        "contracts=%d matched=%d unmatched=%d ambiguous=%d rejected=%d",
+        sport.value,
+        status,
+        kalshi.cache_hit_for(sport),
+        counts["total"],
+        counts["matched"],
+        counts["unmatched"],
+        counts["ambiguous"],
+        counts["rejected"],
+    )
     return PredictionMarketsResponse(
         generated_at=now,
         provider_status={kalshi.name: status},
         provider_details={
             kalshi.name: ProviderDetails(
                 status=status,
-                cache_hit=kalshi.cache_hit,
+                cache_hit=kalshi.cache_hit_for(sport),
                 stale=status == "stale",
                 last_refreshed_at=kalshi.last_refreshed_at(sport),
                 error_type=kalshi.last_error_type(sport),
+                cache_age_seconds=kalshi.cache_age_seconds(sport),
             )
         },
+        contract_counts=counts,
         contracts=contracts,
     )
 

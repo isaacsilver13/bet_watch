@@ -22,6 +22,9 @@ Standalone NFL and NBA odds comparison app.
   sportsbook grid or best-price logic. Only two-sided game-winner contracts are matched to a
   sportsbook game (teams + date); everything else is shown as unmatched behind a UI filter.
   Fixture mode serves committed sample payloads and never contacts Kalshi.
+- The responsive frontend uses one sportsbook matrix per game, URL-backed league/date/team/market
+  filters, source-specific stale/error states, and paired Kalshi outcomes with last trade labeled
+  separately from bid and ask.
 - `GET /api/v1/history?event_id=...&market_type=...` reads immutable historical
     observations when persistence is enabled.
 
@@ -104,9 +107,9 @@ The API surface is intentionally read-only:
 - `GET /api/v1/odds?sport=...&event_id=...&market_type=...&force_refresh=true`
 - `GET /api/v1/history?event_id=<canonical-id>&market_type=<market>&limit=...`
 
-The comparison board includes a refresh action on each event. It refreshes
-only the currently selected market for that event and merges the result into
-the existing board, leaving the other events and markets in place.
+When the server reports that public expensive refresh is safe (fixture mode), the comparison
+board includes refresh actions for the board and individual events. Live public clients use the
+server cache instead.
 
 ### Paid-request controls
 
@@ -119,6 +122,11 @@ global budget (`ADMIN_REFRESH_BUDGET` per `ADMIN_REFRESH_BUDGET_WINDOW_SECONDS`,
 process-local); throttled calls get `X-Refresh-Ignored: throttled`. `/health/errors`
 (redacted) and quota figures require the same header; `/health` and `/status` stay public.
 
+The browser never receives `ADMIN_REFRESH_SECRET`. It hides protected refresh controls when the
+public capability is disabled and reports an ignored/throttled response instead of claiming a
+refresh succeeded. Populate player props from a trusted operator session by calling `/odds` with
+the admin header; never put the secret in frontend configuration or a browser bundle.
+
 There is no automated bet placement or sportsbook account integration.
 
 ### Frontend
@@ -127,6 +135,12 @@ There is no automated bet placement or sportsbook account integration.
 cd frontend
 npm install
 npm run dev
+npm test
+npm run test:browser
 ```
 
 The Vite development server proxies `/api` to `http://127.0.0.1:8000`.
+`npm run test:browser` starts credential-isolated fixture servers and runs the responsive Playwright
+smoke test in desktop and mobile viewports. It never reads the repository `.env`.
+Production uses one Fly app: the multi-stage Docker build compiles this frontend and FastAPI serves
+it from the same origin as `/api/v1`.

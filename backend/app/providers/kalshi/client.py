@@ -5,6 +5,7 @@ import httpx
 
 from app.domain.models import Sport
 from app.providers.errors import (
+    ProviderIncompleteResponseError,
     ProviderPayloadError,
     ProviderRateLimitError,
     ProviderRequestRejectedError,
@@ -19,23 +20,26 @@ MAX_PAGES = 5  # bounded polling: ~1000 contracts is far above a week of NFL/NBA
 class KalshiClient:
     """Read-only client for Kalshi's unauthenticated public market-data endpoint."""
 
-    base_url = "https://api.elections.kalshi.com/trade-api/v2"
+    default_base_url = "https://external-api.kalshi.com/trade-api/v2"
 
     def __init__(
         self,
         timeout: float = 15.0,
         max_retries: int = 2,
         backoff_seconds: float = 0.5,
+        base_url: str = default_base_url,
         transport: Optional[httpx.AsyncBaseTransport] = None,
     ) -> None:
         self.timeout = timeout
         self.max_retries = max_retries
         self.backoff_seconds = backoff_seconds
+        self.base_url = base_url.rstrip("/")
         self.transport = transport
 
     async def fetch_markets(self, sport: Sport) -> list[dict[str, Any]]:
         markets: list[dict[str, Any]] = []
         cursor = ""
+        seen_cursors: set[str] = set()
         for _ in range(MAX_PAGES):
             params = {"series_ticker": SERIES[sport], "status": "open", "limit": "200"}
             if cursor:
@@ -44,10 +48,14 @@ class KalshiClient:
             if not isinstance(page, dict) or not isinstance(page.get("markets"), list):
                 raise ProviderPayloadError("Kalshi returned an unexpected markets payload")
             markets.extend(page["markets"])
-            cursor = page.get("cursor") or ""
-            if not cursor:
-                break
-        return markets
+            next_cursor = page.get("cursor") or ""
+            if not next_cursor:
+                return markets
+            if next_cursor == cursor or next_cursor in seen_cursors:
+                raise ProviderIncompleteResponseError("Kalshi repeated a pagination cursor")
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+        raise ProviderIncompleteResponseError("Kalshi pagination exceeded the page budget")
 
     async def _get_json(self, path: str, params: dict[str, str]) -> Any:
         for attempt in range(self.max_retries + 1):

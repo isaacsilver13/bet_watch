@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+import time
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from datetime import date, datetime, timedelta, timezone
@@ -15,6 +16,7 @@ from app.providers.kalshi.client import SERIES, KalshiClient
 _FIXTURES = Path(__file__).resolve().parents[3] / "tests" / "fixtures"
 _GAME_RULE = re.compile(r"^If .+ wins the .+ game", re.IGNORECASE)
 _TICKER_DATE = re.compile(r"-(\d{2})([A-Z]{3})(\d{2})")
+_MARKET_SLUG = {Sport.NFL: "nfl-game", Sport.NBA: "nba-game"}
 _MONTHS = {
     m: i for i, m in enumerate("JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC".split(), start=1)
 }
@@ -109,6 +111,14 @@ def normalize_markets(
             else:
                 reason = "no sportsbook event with the same teams and date"
         bid, ask = _prob(market.get("yes_bid_dollars")), _prob(market.get("yes_ask_dollars"))
+        last_price = _prob(market.get("last_price_dollars"))
+        midpoint = (
+            round((bid + ask) / 2, 4)
+            if bid is not None and ask is not None and ask >= bid
+            else None
+        )
+        rules_primary = str(market.get("rules_primary") or "")
+        rules_secondary = str(market.get("rules_secondary") or "")
         contracts.append(
             PredictionContract(
                 venue="kalshi",
@@ -116,20 +126,29 @@ def normalize_markets(
                 source_event_id=market["event_ticker"],
                 title=market.get("title", market["ticker"]),
                 outcome=market.get("yes_sub_title", ""),
-                url=f"https://kalshi.com/markets/{SERIES[sport].lower()}",
-                rules="\n\n".join(
-                    filter(None, (market.get("rules_primary"), market.get("rules_secondary")))
+                url=(
+                    f"https://kalshi.com/markets/{SERIES[sport].lower()}/"
+                    f"{_MARKET_SLUG[sport]}/{market['event_ticker'].lower()}"
                 ),
-                probability=_prob(market.get("last_price_dollars")),
+                rules="\n\n".join(
+                    filter(None, (rules_primary, rules_secondary))
+                ),
+                rules_primary=rules_primary,
+                rules_secondary=rules_secondary,
+                probability=last_price,
+                last_price=last_price,
                 best_bid=bid,
                 best_ask=ask,
+                midpoint=midpoint,
                 spread=round(ask - bid, 4) if bid is not None and ask is not None else None,
                 bid_size=_num(market.get("yes_bid_size_fp")),
                 ask_size=_num(market.get("yes_ask_size_fp")),
                 volume=_num(market.get("volume_fp")),
                 open_interest=_num(market.get("open_interest_fp")),
+                liquidity=_num(market.get("liquidity_dollars")),
                 status=str(market.get("status", "unknown")),
                 close_time=_time(market.get("close_time")),
+                metadata_updated_at=_time(market.get("updated_time")),
                 observed_at=observed_at,
                 match_status=status,
                 match_reason=reason,
@@ -165,7 +184,17 @@ class KalshiProvider:
         self.retry_after = timedelta(seconds=retry_after_seconds)
         self._retry_at: dict = {}  # sport -> no upstream call before this time
         self._errors: dict = {}  # sport -> last error_type
-        self.cache_hit = False
+        self._cache_hits: dict = {}
+        self._counts: dict = {}
+        self._last_contracts: dict = {}  # sport -> (observed_at, fully normalized contracts)
+        self._metrics: dict = defaultdict(
+            lambda: {
+                "request_count": 0,
+                "success_count": 0,
+                "error_count": 0,
+                "last_duration_ms": None,
+            }
+        )
 
     def last_error_type(self, sport: Sport) -> Optional[str]:
         return self._errors.get(sport)
@@ -179,30 +208,108 @@ class KalshiProvider:
         cached = self._cache.get(sport)
         return cached[0] if cached else None
 
-    async def _markets(self, sport: Sport) -> list:
+    def cache_hit_for(self, sport: Sport) -> bool:
+        return bool(self._cache_hits.get(sport, False))
+
+    def cache_age_seconds(self, sport: Sport) -> Optional[float]:
+        refreshed = self.last_refreshed_at(sport)
+        if refreshed is None:
+            return None
+        return max(0.0, (datetime.now(timezone.utc) - refreshed).total_seconds())
+
+    def contract_counts(self, sport: Sport) -> dict[str, int]:
+        return dict(
+            self._counts.get(
+                sport,
+                {"total": 0, "matched": 0, "unmatched": 0, "ambiguous": 0, "rejected": 0},
+            )
+        )
+
+    def metrics(self, sport: Sport) -> dict:
+        return {
+            **dict(self._metrics[sport]),
+            "cache_age_seconds": self.cache_age_seconds(sport),
+            "cache_hit": self.cache_hit_for(sport),
+            "contract_counts": self.contract_counts(sport),
+            "status": self.status(sport),
+            "last_refreshed_at": self.last_refreshed_at(sport),
+            "last_error_type": self.last_error_type(sport),
+        }
+
+    async def _markets(
+        self, sport: Sport, events: Sequence[Event]
+    ) -> tuple[list, datetime]:
         async with self._lock:  # single-flight: concurrent requests share one upstream call
             cached = self._cache.get(sport)
             now = datetime.now(timezone.utc)
-            self.cache_hit = bool(cached and now - cached[0] < self.ttl)
-            if self.cache_hit:
-                return cached[1]
+            self._cache_hits[sport] = bool(cached and now - cached[0] < self.ttl)
+            if self._cache_hits[sport]:
+                return cached[1], cached[0]
             if self._errors.get(sport) and now < self._retry_at.get(sport, now):
                 # Backing off after a failure: don't hammer upstream while it is down.
                 if cached:
-                    return cached[1]
+                    return cached[1], cached[0]
                 raise OddsProviderError(f"Kalshi unavailable ({self._errors[sport]})")
+            started = time.perf_counter()
             try:
+                self._metrics[sport]["request_count"] += 1
                 markets = await self.client.fetch_markets(sport)
+                # Validate the complete upstream snapshot before marking the refresh successful
+                # or replacing the last known good cache. Matching is repeated below because the
+                # sportsbook event set can change independently of the Kalshi TTL.
+                try:
+                    normalize_markets({"markets": markets}, sport, events, now)
+                except ProviderPayloadError:
+                    raise
+                except Exception as error:
+                    raise ProviderPayloadError(
+                        "Kalshi markets could not be normalized"
+                    ) from error
             except Exception as error:  # any failure falls back to stale data, like the odds cache
+                self._metrics[sport]["error_count"] += 1
+                self._metrics[sport]["last_duration_ms"] = round(
+                    (time.perf_counter() - started) * 1000, 2
+                )
                 self._errors[sport] = getattr(error, "error_type", type(error).__name__)
                 self._retry_at[sport] = now + self.retry_after
                 if cached:
-                    return cached[1]
+                    return cached[1], cached[0]
                 raise
             self._errors.pop(sport, None)
+            self._metrics[sport]["success_count"] += 1
+            self._metrics[sport]["last_duration_ms"] = round(
+                (time.perf_counter() - started) * 1000, 2
+            )
             self._cache[sport] = (now, markets)
-            return markets
+            return markets, now
 
     async def get_contracts(self, sport: Sport, events: Sequence[Event]) -> list:
-        markets = await self._markets(sport)
-        return normalize_markets({"markets": markets}, sport, events, datetime.now(timezone.utc))
+        markets, observed_at = await self._markets(sport, events)
+        try:
+            contracts = normalize_markets(
+                {"markets": markets}, sport, events, observed_at
+            )
+        except Exception as error:
+            typed_error = (
+                error
+                if isinstance(error, ProviderPayloadError)
+                else ProviderPayloadError("Kalshi markets could not be normalized")
+            )
+            self._errors[sport] = typed_error.error_type
+            self._retry_at[sport] = datetime.now(timezone.utc) + self.retry_after
+            previous = self._last_contracts.get(sport)
+            if previous:
+                return previous[1]
+            if typed_error is error:
+                raise
+            raise typed_error from error
+        self._last_contracts[sport] = (observed_at, contracts)
+        counts = {
+            "total": len(contracts),
+            "matched": sum(c.match_status is MatchStatus.MATCHED for c in contracts),
+            "unmatched": sum(c.match_status is MatchStatus.UNMATCHED for c in contracts),
+            "ambiguous": sum(c.match_status is MatchStatus.AMBIGUOUS for c in contracts),
+            "rejected": max(0, len(markets) - len(contracts)),
+        }
+        self._counts[sport] = counts
+        return contracts

@@ -7,6 +7,9 @@
 `feat/sportsbooks-prediction-markets`; Slice E (Polymarket) dropped from this plan.
 
 **Implementation rulings (deviations from the design below):**
+- Superseded for the next release by
+  `docs/plans/2026-10-08-frontend-and-kalshi-next-release.md`; keep this file as historical design
+  context for the implemented prototype.
 - Prediction contracts live behind a separate `/prediction-markets` endpoint and
   `PredictionContract` model, not `venue_kind` on `Offer`. This makes "never affects sportsbook
   best price" true by construction and avoids rewiring `/odds` around `ProviderRegistry`.

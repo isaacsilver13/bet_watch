@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
 
 from app.domain.models import Event, EventComparison, MarketType, Offer, Sport
@@ -20,13 +20,19 @@ class FixtureOddsProvider:
         requested_sport = sport or Sport.NFL
         observed_at = datetime.now(timezone.utc)
         event_id = f"{self.name}:{requested_sport.value}:sample"
+        if requested_sport is Sport.NFL:
+            home_team, away_team = "San Francisco 49ers", "Washington Commanders"
+            start_time = datetime(2026, 10, 20, 3, 15, tzinfo=timezone.utc)
+        else:
+            home_team, away_team = "Sacramento Kings", "Portland Trail Blazers"
+            start_time = datetime(2026, 10, 14, 5, 0, tzinfo=timezone.utc)
         event = Event(
             id=event_id,
             sport=requested_sport,
             league="NFL" if requested_sport is Sport.NFL else "NBA",
-            home_team="Home Hawks",
-            away_team="Away Comets",
-            start_time=observed_at + timedelta(hours=2),
+            home_team=home_team,
+            away_team=away_team,
+            start_time=start_time,
         )
         offers = [
             Offer(

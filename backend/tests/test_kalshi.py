@@ -8,7 +8,11 @@ import httpx
 import pytest
 from app.domain.models import Event, MatchStatus, Sport
 from app.identity import canonical_event_id
-from app.providers.errors import ProviderPayloadError, ProviderUpstreamError
+from app.providers.errors import (
+    ProviderIncompleteResponseError,
+    ProviderPayloadError,
+    ProviderUpstreamError,
+)
 from app.providers.kalshi.adapter import normalize_markets
 from app.providers.kalshi.client import KalshiClient
 
@@ -35,8 +39,12 @@ def test_normalizes_native_prices_rules_and_matches_game() -> None:
     assert len(contracts) == 2
     was = next(c for c in contracts if c.contract_id.endswith("-WAS"))
     assert was.venue == "kalshi" and was.outcome == "Washington"
-    assert was.probability == 0.23 and was.best_bid == 0.23 and was.best_ask == 0.24
+    assert was.probability == 0.23 and was.last_price == 0.23
+    assert was.best_bid == 0.23 and was.best_ask == 0.24 and was.midpoint == 0.235
     assert was.spread == pytest.approx(0.01)
+    assert was.metadata_updated_at == datetime(2026, 10, 6, 4, 6, 0, 764221, tzinfo=timezone.utc)
+    assert was.url.endswith("/kxnflgame/nfl-game/kxnflgame-26oct19wassf")
+    assert was.rules_primary.startswith("If Washington wins")
     assert "game ends in a tie" in was.rules  # settlement semantics are carried, not inferred
     assert was.match_status is MatchStatus.MATCHED
     assert was.event_id == canonical_event_id(WAS_SF)
@@ -119,6 +127,28 @@ def test_client_pages_until_cursor_exhausted_and_sends_no_credentials() -> None:
     assert [m["ticker"] for m in markets] == ["a", "b"]
     assert seen[0].url.params["series_ticker"] == "KXNBAGAME"
     assert "authorization" not in seen[0].headers
+    assert seen[0].url.host == "external-api.kalshi.com"
+
+
+def test_client_rejects_repeated_pagination_cursor() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"markets": [], "cursor": "same"})
+
+    with pytest.raises(ProviderIncompleteResponseError, match="repeated"):
+        asyncio.run(_client(handler).fetch_markets(Sport.NFL))
+
+
+def test_client_rejects_page_budget_exhaustion(monkeypatch) -> None:
+    monkeypatch.setattr("app.providers.kalshi.client.MAX_PAGES", 2)
+    page = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal page
+        page += 1
+        return httpx.Response(200, json={"markets": [], "cursor": f"c{page}"})
+
+    with pytest.raises(ProviderIncompleteResponseError, match="page budget"):
+        asyncio.run(_client(handler).fetch_markets(Sport.NFL))
 
 
 def test_client_maps_server_errors_after_retries() -> None:
@@ -169,7 +199,49 @@ def test_route_serves_contracts_and_caches_within_ttl(monkeypatch) -> None:
         body = api.get("/api/v1/prediction-markets", params={"sport": "nfl"}).json()
     assert len(body["contracts"]) == 2
     assert body["contracts"][0]["match_status"] == "unmatched"  # no sportsbook events cached
+    assert body["contract_counts"] == {
+        "total": 2,
+        "matched": 0,
+        "unmatched": 2,
+        "ambiguous": 0,
+        "rejected": 0,
+    }
+    assert body["provider_details"]["kalshi"]["cache_age_seconds"] is not None
     assert flaky.calls == 1
+
+
+def test_cache_hits_preserve_the_original_observation_time() -> None:
+    provider = KalshiProvider(KalshiFixtureClient(), ttl_seconds=300)
+
+    first = asyncio.run(provider.get_contracts(Sport.NFL, []))
+    second = asyncio.run(provider.get_contracts(Sport.NFL, []))
+
+    assert second[0].observed_at == first[0].observed_at
+
+
+def test_normalization_failure_keeps_last_good_snapshot_and_marks_stale() -> None:
+    class MalformedAfterFirstClient(FlakyClient):
+        async def fetch_markets(self, sport):
+            markets = await super().fetch_markets(sport)
+            if self.calls > 1:
+                markets = copy.deepcopy(markets)
+                for market in markets:
+                    market["event_ticker"] = "KXNFLGAME-26FEB31-BAD"
+            return markets
+
+    upstream = MalformedAfterFirstClient()
+    provider = KalshiProvider(upstream, ttl_seconds=0)
+    first = asyncio.run(provider.get_contracts(Sport.NFL, []))
+    second = asyncio.run(provider.get_contracts(Sport.NFL, []))
+
+    assert [contract.contract_id for contract in second] == [
+        contract.contract_id for contract in first
+    ]
+    assert second[0].observed_at == first[0].observed_at
+    assert provider.status(Sport.NFL) == "stale"
+    assert provider.last_error_type(Sport.NFL) == "invalid_payload"
+    assert provider.metrics(Sport.NFL)["success_count"] == 1
+    assert provider.metrics(Sport.NFL)["error_count"] == 1
 
 
 def test_failure_serves_stale_then_errors_without_cache_and_never_touches_odds(monkeypatch) -> None:
@@ -199,6 +271,7 @@ def test_build_kalshi_respects_flag_and_mode() -> None:
     assert isinstance(fixture.client, KalshiFixtureClient)
     live = routes.build_kalshi(replace(base, kalshi_enabled=True, provider_mode=ProviderMode.LIVE))
     assert isinstance(live.client, KalshiClient)
+    assert live.client.base_url == base.kalshi_base_url
 
 
 def test_non_json_body_is_a_typed_error_not_a_crash() -> None:
@@ -218,3 +291,14 @@ def test_failed_refresh_backs_off_instead_of_rehitting_upstream() -> None:
         assert len(asyncio.run(provider.get_contracts(Sport.NFL, []))) == 2  # stale served
     assert flaky.calls == 2  # one good fetch + one failure; no further upstream calls
     assert provider.last_error_type(Sport.NFL) == "timeout"
+
+
+def test_metrics_are_isolated_by_sport() -> None:
+    provider = KalshiProvider(KalshiFixtureClient(), ttl_seconds=300)
+
+    asyncio.run(provider.get_contracts(Sport.NFL, []))
+
+    assert provider.metrics(Sport.NFL)["success_count"] == 1
+    assert provider.metrics(Sport.NFL)["contract_counts"]["total"] == 2
+    assert provider.metrics(Sport.NBA)["success_count"] == 0
+    assert provider.metrics(Sport.NBA)["contract_counts"]["total"] == 0

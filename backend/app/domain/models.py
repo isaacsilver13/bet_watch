@@ -76,6 +76,7 @@ class ProviderDetails(BaseModel):
     last_refreshed_at: Optional[datetime] = None
     error_type: Optional[str] = None
     quota_remaining: Optional[int] = None
+    cache_age_seconds: Optional[float] = None
 
 
 class ComparisonResponse(BaseModel):
@@ -108,17 +109,24 @@ class PredictionContract(BaseModel):
     outcome: str
     url: str
     rules: str
+    # Kept for API compatibility. It is the last trade, not an executable quote.
     probability: Optional[float] = Field(default=None, ge=0, le=1)
+    last_price: Optional[float] = Field(default=None, ge=0, le=1)
     best_bid: Optional[float] = Field(default=None, ge=0, le=1)
     best_ask: Optional[float] = Field(default=None, ge=0, le=1)
+    midpoint: Optional[float] = Field(default=None, ge=0, le=1)
     spread: Optional[float] = None
     bid_size: Optional[float] = None
     ask_size: Optional[float] = None
     volume: Optional[float] = None
     open_interest: Optional[float] = None
+    liquidity: Optional[float] = None
     status: str
     close_time: Optional[datetime] = None
+    metadata_updated_at: Optional[datetime] = None
     observed_at: datetime
+    rules_primary: str = ""
+    rules_secondary: str = ""
     match_status: MatchStatus
     match_reason: str
     event_id: Optional[str] = None  # canonical sportsbook event id when matched
@@ -129,4 +137,5 @@ class PredictionMarketsResponse(BaseModel):
     generated_at: datetime
     provider_status: dict[str, str]
     provider_details: dict[str, ProviderDetails] = Field(default_factory=dict)
+    contract_counts: dict[str, int] = Field(default_factory=dict)
     contracts: list[PredictionContract] = Field(default_factory=list)

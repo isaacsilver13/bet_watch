@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from dotenv import dotenv_values
 
@@ -25,6 +26,7 @@ def _setting(name: str, default: str) -> str:
 
 _VALID_REGIONS = {"us", "us2", "uk", "eu", "au"}
 _BOOKMAKER_KEY = re.compile(r"^[a-z0-9_]+$")
+_DEFAULT_KALSHI_BASE_URL = "https://external-api.kalshi.com/trade-api/v2"
 
 
 def _parse_regions(raw: str) -> str:
@@ -39,6 +41,21 @@ def _parse_bookmakers(raw: str) -> tuple:
     if not all(_BOOKMAKER_KEY.match(k) for k in keys):
         raise ValueError("ODDS_BOOKMAKERS must be comma-separated provider keys like 'draftkings'")
     return keys
+
+
+def _parse_kalshi_base_url(raw: str) -> str:
+    value = raw.strip().rstrip("/")
+    parsed = urlparse(value)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("KALSHI_BASE_URL must be an HTTPS URL without credentials or a query")
+    return value
 
 
 class ProviderMode(str, Enum):
@@ -64,6 +81,7 @@ class Settings:
     odds_bookmakers: tuple = ()  # non-empty allowlist wins over odds_regions
     kalshi_enabled: bool = False
     kalshi_cache_ttl_seconds: int = 300
+    kalshi_base_url: str = _DEFAULT_KALSHI_BASE_URL
     admin_refresh_secret: Optional[str] = None
     admin_refresh_budget: int = 4
     admin_refresh_budget_window_seconds: int = 86400
@@ -97,6 +115,9 @@ def load_settings() -> Settings:
         odds_bookmakers=_parse_bookmakers(_setting("ODDS_BOOKMAKERS", "")),
         kalshi_enabled=_setting("KALSHI_ENABLED", "false").strip().lower() == "true",
         kalshi_cache_ttl_seconds=int(_setting("KALSHI_CACHE_TTL_SECONDS", "300")),
+        kalshi_base_url=_parse_kalshi_base_url(
+            _setting("KALSHI_BASE_URL", _DEFAULT_KALSHI_BASE_URL)
+        ),
         admin_refresh_secret=_setting("ADMIN_REFRESH_SECRET", "") or None,
         admin_refresh_budget=int(_setting("ADMIN_REFRESH_BUDGET", "4")),
         admin_refresh_budget_window_seconds=int(

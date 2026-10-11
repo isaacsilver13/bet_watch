@@ -74,6 +74,8 @@ def test_status_reports_unconfigured_provider_without_fetching_odds(monkeypatch)
         "generated_at": None,
         "event_count": 0,
         "coverage": {"regions": "us", "bookmakers": []},
+        "capabilities": {"public_expensive_refresh": True},
+        "prediction_markets": {"kalshi_enabled": False},
     }
 
 
@@ -140,6 +142,16 @@ def test_settings_load_provider_controls(monkeypatch) -> None:
     assert settings.provider_mode is ProviderMode.LIVE
     assert settings.cache_ttl_seconds == 120
     assert settings.provider_min_quota_remaining == 7
+
+
+def test_settings_loads_validated_kalshi_base_url(monkeypatch) -> None:
+    monkeypatch.setenv("KALSHI_BASE_URL", "https://example.test/trade-api/v2/")
+
+    assert load_settings().kalshi_base_url == "https://example.test/trade-api/v2"
+
+    monkeypatch.setenv("KALSHI_BASE_URL", "http://example.test/trade-api/v2")
+    with pytest.raises(ValueError, match="HTTPS URL"):
+        load_settings()
 
 
 def test_settings_load_dotenv_for_local_live_configuration(monkeypatch, tmp_path) -> None:
