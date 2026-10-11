@@ -32,7 +32,6 @@ The user's real-money goal and past findings (nba_prediction `docs/edge-research
 - The Illinois per-bet fees are kept in a per-venue config, not hardcoded:
   - FanDuel $0.50, waived at $25 and up
   - DraftKings $0.50, waived on singles of $50 and up
-  - Fanatics $0.25
   - others $0
 - Kalshi is a supplementary venue, and its prices stay out of `/odds` (per the aggregator's CLAUDE.md).
 - The analysis is framed as statistically honest and is not betting advice (AGENTS.md).
@@ -107,9 +106,8 @@ Per-book prices stay in the existing `offer_observations`, which is append-only.
 | `grade_bets` | Internal tables | After games go final |
 
 **Book coverage (verified 2026-10-11 against the Odds API bookmaker list):**
-- Caesars (`williamhill_us`) and Fanatics are **paid-only** and are not snapshotted.
+- Caesars (`williamhill_us`) and Fanatics are **paid-only** and are dropped entirely (user decision 2026-10-11): no snapshots, no fee rules, no manual-price bets.
 - The aggregator's current default allowlist includes them, so phase 0 fixes it.
-- Bets at uncovered venues use a manually entered price in the bet form.
 - Coverage is *measured* on every snapshot (books × markets × games returned) and shown on the health panel. It is never assumed.
 
 **Job state model (crash-safe and idempotent):**

@@ -8,7 +8,8 @@ from urllib.parse import urlparse
 
 from dotenv import dotenv_values
 
-_DOTENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_DOTENV_PATH = _REPO_ROOT / ".env"
 _DEFAULT_DATABASE_URL = (
     "postgresql+asyncpg://betting_aggregator:betting_aggregator@127.0.0.1:5433/"
     "betting_aggregator"
@@ -85,6 +86,7 @@ class Settings:
     admin_refresh_secret: Optional[str] = None
     admin_refresh_budget: int = 4
     admin_refresh_budget_window_seconds: int = 86400
+    raw_data_dir: str = "data/raw"
 
 
 def load_settings() -> Settings:
@@ -123,4 +125,5 @@ def load_settings() -> Settings:
         admin_refresh_budget_window_seconds=int(
             _setting("ADMIN_REFRESH_BUDGET_WINDOW_SECONDS", "86400")
         ),
+        raw_data_dir=_setting("RAW_DATA_DIR", "").strip() or str(_REPO_ROOT / "data" / "raw"),
     )
