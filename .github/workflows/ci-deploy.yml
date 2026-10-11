@@ -68,16 +68,3 @@ jobs:
       - name: Run fixture browser smoke tests
         working-directory: frontend
         run: npm run test:browser
-
-  deploy:
-    needs: [backend-test, frontend-build, browser-smoke]
-    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    concurrency: deploy-betting-aggregator
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6 (was @master)
-      - name: Deploy to Fly.io
-        run: flyctl deploy --remote-only
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_API }}
