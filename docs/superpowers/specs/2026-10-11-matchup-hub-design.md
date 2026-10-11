@@ -67,6 +67,13 @@ The approach is **ingest-and-store**:
 - When the PC was off, per-book snapshots are lost.
 - ESPN's open and close for past games backfill CLV and ATS.
 
+**ESPN facts (checked 2026-10-11 against live payloads):**
+- **The scoreboard's `close`:** until kickoff, the scoreboard's `odds[0]` "close" field is the *current* line. We store it as `current` while the game state is `pre`, and as `close` once the game has started.
+- **Finished games:** the scoreboard **drops `odds` once a game is final**. The game summary endpoint (`/summary?event=<id>`, `pickcenter[0]`) keeps open and close, in the same shape. That endpoint is the backfill source.
+- **One book:** ESPN lines come from a single book (DraftKings, provider id 100).
+- **Bonus fields** for phase 1b: the scoreboard also carries `weather`, and the summary carries `injuries` and `againstTheSpread`.
+- **nflverse join:** nflverse `games.csv` has an `espn` column, so historical games join to ESPN games on `espn_id`. nflverse `spread_line` is positive when home is favored, so `spread_home = -spread_line`.
+
 ## Data model (new Alembic migrations)
 
 | Table | Key columns | Notes |
@@ -75,7 +82,7 @@ The approach is **ingest-and-store**:
 | `team_aliases` | team_id, source, alias | Replaces name-hash matching (`identity.py`) for linking odds events to games |
 | `venues` | id, name, lat, lon, tz, roof, surface | Used for travel and weather |
 | `games` | id, sport, season, week (null for basketball), season_type, start_time, home/away_team_id, venue_id, neutral, status, home/away_score, espn_id (unique), event_id → `events.id` (nullable) | The backbone; `event_id` links odds |
-| `game_lines` | game_id, source (espn/nflverse), kind (open/close), spread_home, total, ml_home, ml_away, captured_at | Reference lines for ATS, O/U and CLV. nflverse history is labeled "unverified close" |
+| `game_lines` | game_id, source (espn/nflverse), kind (open/current/close), spread_home, spread_home_price, spread_away_price, total, over_price, under_price, ml_home, ml_away, captured_at | Reference lines for ATS, O/U and CLV. nflverse history is labeled "unverified close" |
 | `team_game_stats` | game_id, team_id, stats JSONB | One stats bag per sport |
 | `injuries` | team_id, player, position, status, detail, source, reported_at | Snapshots; the latest per player is shown |
 | `weather` | game_id, fetched_at, temp_f, wind_mph, precip_pct, conditions | Outdoor games only |
@@ -90,8 +97,8 @@ Per-book prices stay in the existing `offer_observations`, which is append-only.
 |---|---|---|
 | `seed` | Committed CSV with 32 teams, aliases, and stadium coordinates, roof and time zone | Once |
 | `nfl_history` | nflverse `games.csv` from 2015: games, scores, closing spread and total, rest | Once, then weekly |
-| `schedule` | ESPN scoreboard for the current and next week | Daily; every run on game days |
-| `lines` | ESPN odds: open, current and close | Daily; close captured at kickoff |
+| `espn_scoreboard` | ESPN scoreboard for the current and next week: schedule, status, scores, open and current lines (one call gives both, so schedule and lines are one job) | Hourly, 08:00–23:00 CT |
+| `espn_closes` | ESPN game summary `pickcenter` for final games still missing a close: open and close | Daily |
 | `team_stats` | nflverse weekly team stats (EPA, success rate, counting stats) | Tuesday |
 | `injuries` | ESPN injuries, with nflverse as fallback | Daily |
 | `weather` | Open-Meteo forecast for outdoor games within 7 days | Daily; every 3 hours on game day |
@@ -122,8 +129,8 @@ Per-book prices stay in the existing `offer_observations`, which is append-only.
   3. A crash after the HTTP call re-parses `raw_saved` slots from disk and never pays for the request again.
 - **Success depends on content:**
   - `odds_snapshot` is `done` only if every targeted game has all 3 markets from at least 3 books. Otherwise it is `partial`, and it retries up to the attempt cap until the window closes.
-  - The `lines` close requires ESPN's close fields to be present.
-  - `schedule` and `grade_bets` require final scores.
+  - The `espn_closes` close requires the summary `pickcenter` to be present.
+  - `espn_closes` and `grade_bets` require final scores.
 - **Quota authority:**
   - The Odds API `x-requests-remaining` header (already parsed in `the_odds_api/client.py`) is authoritative.
   - Local counts are audit-only.
@@ -198,7 +205,7 @@ The existing `/odds`, `/history` and `/prediction-markets` are kept as they are.
 ## Frontend (React + Vite + TS, existing theme)
 - Adds `react-router-dom` and `@tanstack/react-query`, which match the developer profile.
 - Reuses `OddsMatrix`, `PredictionMarkets` and `GlassCard`.
-- **Slate** (`/:sport/:season/:week`):
+- **Slate** (`/:sport/:season/:seasonType/:week`, e.g. `/nfl/2026/reg/6`):
   - week picker
   - game cards showing kickoff, spread and total, movement arrow, best price, and weather, injury and bet badges
 - **Matchup** (`/game/:id`):
@@ -218,7 +225,7 @@ The existing `/odds`, `/history` and `/prediction-markets` are kept as they are.
   - remove the paid-only `williamhill_us` and `fanatics` from the default `ODDS_BOOKMAKERS` and add `espnbet`
   - run a one-time coverage smoke test that calls the real API once and records which books and markets actually come back
   - document `docker-compose up` plus Task Scheduler setup as the default way to run
-- **Phase 1a:** migrations, seed, `nfl_history`, `schedule`, `lines`, `link_events`, `/slate`, Slate page.
+- **Phase 1a:** migrations, seed, `nfl_history`, `espn_scoreboard`, `espn_closes`, `link_events`, `/slate`, Slate page.
 - **Phase 1b:** `team_stats`, `injuries`, `weather`, `analytics/` records and situational, `/context`, Matchup page.
 - **Phase 1c:** `odds_snapshot` cadence, `/lines` and refresh, bets, `grade_bets`, CLV, Bets page.
 - **Phase 2, NBA:**
