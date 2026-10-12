@@ -219,3 +219,17 @@ footer { gap: 20px; padding-top: 20px; }
   .prediction-card-head { align-items: flex-start; flex-direction: column; }
   .prediction-stats { grid-template-columns: 1fr; }
 }
+
+.app-nav a { color: var(--secondary); text-decoration: none; font-weight: 600; }
+.app-nav a:hover { text-decoration: underline; }
+.slate-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); margin-top: 16px; }
+.slate-card { padding: 16px 18px; }
+.slate-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.slate-card-head h3 { margin: 0; font-size: 1.15rem; }
+.slate-status { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+.slate-venue { color: var(--muted); font-size: 0.8rem; margin: 4px 0 12px; }
+.slate-lines { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; }
+.slate-lines dt { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.slate-lines dd { margin: 2px 0 0; font-family: "DM Mono", ui-monospace, monospace; }
+.slate-move { color: var(--warning); font-size: 0.8rem; margin: 10px 0 0; }
+.slate-source { color: var(--muted); font-size: 0.7rem; margin: 6px 0 0; }
