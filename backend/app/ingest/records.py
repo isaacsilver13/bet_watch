@@ -40,3 +40,13 @@ class GameRecord:
     home_qb: Optional[str] = None  # nflverse starter, once the game is played
     away_qb: Optional[str] = None
     lines: tuple[LineRecord, ...] = ()
+
+
+@dataclass(frozen=True)
+class InjuryRecord:
+    team_espn_id: str
+    player: str
+    position: Optional[str]
+    status: str  # Out | Doubtful | Questionable | Injured Reserve | Suspension | ...
+    detail: Optional[str]
+    reported_at: Optional[datetime]

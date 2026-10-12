@@ -8,18 +8,20 @@ Verified 2026-10-11:
 """
 
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
 
-from app.ingest.records import GameRecord, LineRecord
+from app.ingest.records import GameRecord, InjuryRecord, LineRecord
 
 SITE_API = "https://site.api.espn.com/apis/site/v2/sports"
 LEAGUE_PATHS = {"nfl": "football/nfl"}
 SEASON_TYPES = {1: "PRE", 2: "REG", 3: "POST"}
 _STATES = {"pre": "scheduled", "in": "in_progress", "post": "final"}
 _SPECIAL_STATUSES = {"STATUS_POSTPONED": "postponed", "STATUS_CANCELED": "canceled"}
+# League injuries also lists depth-chart news as "Active" and retirements as "Reserve-Ret".
+NOT_AVAILABILITY = {"Active", "Reserve-Ret"}
 
 
 def parse_american(value: Any) -> Optional[int]:
@@ -163,5 +165,44 @@ async def fetch_summary(http: httpx.AsyncClient, sport: str, espn_id: str) -> di
     response = await http.get(
         f"{SITE_API}/{LEAGUE_PATHS[sport]}/summary", params={"event": espn_id}
     )
+    response.raise_for_status()
+    return response.json()
+
+
+def _injury_detail(details: Mapping) -> Optional[str]:
+    parts = [p for p in (details.get("type"), details.get("detail")) if p and p != "Not Specified"]
+    return ", ".join(parts) or None
+
+
+def _report_time(value: Optional[str]) -> Optional[datetime]:
+    try:
+        return datetime.strptime(value or "", "%Y-%m-%dT%H:%MZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def parse_injuries(payload: Mapping) -> list[InjuryRecord]:
+    records = []
+    for team in payload.get("injuries") or []:
+        for entry in team.get("injuries") or []:
+            athlete = entry.get("athlete") or {}
+            status = entry.get("status")
+            if not status or status in NOT_AVAILABILITY or not athlete.get("displayName"):
+                continue
+            records.append(
+                InjuryRecord(
+                    team_espn_id=str(team["id"]),
+                    player=athlete["displayName"],
+                    position=(athlete.get("position") or {}).get("abbreviation"),
+                    status=status,
+                    detail=_injury_detail(entry.get("details") or {}),
+                    reported_at=_report_time(entry.get("date")),
+                )
+            )
+    return records
+
+
+async def fetch_injuries(http: httpx.AsyncClient, sport: str) -> dict:
+    response = await http.get(f"{SITE_API}/{LEAGUE_PATHS[sport]}/injuries")
     response.raise_for_status()
     return response.json()
