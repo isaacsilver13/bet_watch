@@ -37,7 +37,7 @@ target-version = "py39"
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.flake8-bugbear]
-extend-immutable-calls = ["fastapi.Query"]
+extend-immutable-calls = ["fastapi.Query", "fastapi.Depends"]
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
