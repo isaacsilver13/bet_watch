@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import error_log
+from app.api.matchup import router as matchup_router
 from app.api.routes import router
 from app.api.slate import router as slate_router
 
@@ -26,6 +27,7 @@ app = FastAPI(
 )
 app.include_router(router)
 app.include_router(slate_router)
+app.include_router(matchup_router)
 
 # Serves the built frontend from the same app/port as the API, so the two no
 # longer need separate Fly apps. No-op locally, where this directory doesn't
