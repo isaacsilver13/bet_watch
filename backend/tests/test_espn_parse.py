@@ -46,14 +46,14 @@ def test_pre_game_close_is_stored_as_current_not_close() -> None:
     assert (lines["current"].ml_home, lines["current"].ml_away) == (102, -122)
 
 
-def test_started_game_close_is_close() -> None:
+def test_started_game_scoreboard_never_writes_close() -> None:
+    # In-game, the scoreboard's "close" can be a live price (ML -425 at 7-3); only the summary's
+    # pickcenter is trusted for the close, so a started game keeps just its opener here.
     game = _by_id()["401872981"]
     assert game.status == "in_progress"
     assert (game.home_score, game.away_score) == (7, 3)
     assert game.neutral is True
-    lines = {line.kind: line for line in game.lines}
-    assert set(lines) == {"open", "close"}
-    assert lines["close"].spread_home == -8.5
+    assert [line.kind for line in game.lines] == ["open"]
 
 
 def test_final_game_without_odds_has_scores_and_no_lines() -> None:

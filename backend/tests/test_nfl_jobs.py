@@ -54,6 +54,8 @@ def test_scoreboard_job_fetches_current_and_next_week(tmp_path) -> None:
         assert await _count(ctx, Game) == 4
         assert any("week=7" in url and "seasontype=2" in url and "dates=2026" in url
                    for url in calls)
+        # The previous week too, so a game last seen live still gets its final after a PC-off gap.
+        assert any("week=5" in url and "seasontype=2" in url for url in calls)
 
     asyncio.run(scenario())
 

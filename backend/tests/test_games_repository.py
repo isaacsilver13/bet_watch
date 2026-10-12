@@ -85,6 +85,24 @@ def test_neutral_site_creates_venue_and_nflverse_cannot_wipe_it(tmp_path) -> Non
     asyncio.run(scenario())
 
 
+def test_nflverse_cannot_rewrite_espn_venue_or_teams_on_existing_game(tmp_path) -> None:
+    async def scenario() -> None:
+        factory, repo = await _seeded(tmp_path)
+        den = next(r for r in _records() if r.espn_id == "401872995")
+        relocated = replace(den, venue_espn_id="3970", venue_name="State Farm Stadium")
+        await repo.upsert_games("nfl", "espn", [relocated], NOW)
+        history_view = replace(den, venue_espn_id=None, home_name="SEA", away_name="DEN",
+                               neutral=True, lines=())
+        await repo.upsert_games("nfl", "nflverse", [history_view], NOW)
+        async with factory() as session:
+            game = await session.scalar(select(Game).where(Game.espn_id == "401872995"))
+            venue = await session.get(Venue, game.venue_id)
+            home = await session.get(Team, game.home_team_id)
+        assert venue.espn_id == "3970" and home.abbr == "DEN" and game.neutral is False
+
+    asyncio.run(scenario())
+
+
 def test_unknown_team_is_skipped_not_crashed(tmp_path) -> None:
     async def scenario() -> None:
         _, repo = await _seeded(tmp_path)
