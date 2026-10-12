@@ -1,7 +1,17 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -82,3 +92,99 @@ class OfferObservation(Base):
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     deep_link: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False)
+
+class Venue(Base):
+    __tablename__ = "venues"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    espn_id: Mapped[Optional[str]] = mapped_column(String(40), unique=True, nullable=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    lat: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    lon: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    tz: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    roof: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # outdoors|dome|retract.
+    surface: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+
+
+class Team(Base):
+    __tablename__ = "teams"
+    __table_args__ = (UniqueConstraint("sport", "abbr", name="uq_teams_sport_abbr"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sport: Mapped[str] = mapped_column(String(20), nullable=False)
+    abbr: Mapped[str] = mapped_column(String(10), nullable=False)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    espn_id: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    conference: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)  # e.g. "AFC West"
+    venue_id: Mapped[Optional[int]] = mapped_column(ForeignKey("venues.id"), nullable=True)
+
+
+class TeamAlias(Base):
+    __tablename__ = "team_aliases"
+    __table_args__ = (UniqueConstraint("sport", "alias", name="uq_team_aliases_sport_alias"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
+    sport: Mapped[str] = mapped_column(String(20), nullable=False)
+    alias: Mapped[str] = mapped_column(String(160), nullable=False)  # identity.normalize_name()
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class Game(Base):
+    __tablename__ = "games"
+    __table_args__ = (
+        Index("ix_games_sport_season_week", "sport", "season", "season_type", "week"),
+        Index("ix_games_start_time", "start_time"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sport: Mapped[str] = mapped_column(String(20), nullable=False)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    season_type: Mapped[str] = mapped_column(String(10), nullable=False)  # PRE|REG|POST
+    week: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    home_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
+    away_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
+    venue_id: Mapped[Optional[int]] = mapped_column(ForeignKey("venues.id"), nullable=True)
+    neutral: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    home_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    away_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    espn_id: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    event_id: Mapped[Optional[str]] = mapped_column(ForeignKey("events.id"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class GameLine(Base):
+    __tablename__ = "game_lines"
+    __table_args__ = (
+        UniqueConstraint("game_id", "source", "kind", name="uq_game_lines_game_source_kind"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), nullable=False)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)  # espn|nflverse
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)  # open|current|close
+    spread_home: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    spread_home_price: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    spread_away_price: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    total: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    over_price: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    under_price: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    ml_home: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    ml_away: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class JobSlot(Base):
+    __tablename__ = "job_slots"
+    __table_args__ = (UniqueConstraint("job", "slot_key", name="uq_job_slots_job_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job: Mapped[str] = mapped_column(String(60), nullable=False)
+    slot_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    state: Mapped[str] = mapped_column(String(20), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    coverage: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    raw_path: Mapped[Optional[str]] = mapped_column(String(400), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
