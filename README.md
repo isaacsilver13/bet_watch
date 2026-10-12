@@ -28,6 +28,23 @@ Standalone NFL and NBA odds comparison app.
 - `GET /api/v1/history?event_id=...&market_type=...` reads immutable historical
     observations when persistence is enabled.
 
+## Local matchup hub
+
+This app is **local-only**: it runs on your PC against docker-compose Postgres and will hold a
+personal bet log. CI no longer deploys; the existing Fly app is left as it is until the owner
+decides what to do with it. Analysis here is statistically honest context, not betting advice.
+
+1. `docker compose up -d postgres`
+2. `copy .env.example .env` (defaults: fixture odds, persistence on)
+3. `alembic upgrade head`
+4. `python -m app.jobs seed`, then `python -m app.jobs nfl_history`, then
+   `python -m app.jobs espn_scoreboard`, then `python -m app.jobs espn_closes`
+5. `uvicorn app.main:app --app-dir backend --reload --port 8000`, and `npm run dev` in `frontend/`
+6. Open `http://localhost:5173/nfl`. The odds board is at `/odds`.
+7. Optional: `powershell -ExecutionPolicy Bypass -File scripts/register_run_due_task.ps1` runs
+   `python -m app.jobs run-due` every 15 minutes while the PC is on. Hours the PC was off are
+   marked `missed` once and never retried.
+
 ## Run locally
 
 ### Backend
@@ -142,5 +159,5 @@ npm run test:browser
 The Vite development server proxies `/api` to `http://127.0.0.1:8000`.
 `npm run test:browser` starts credential-isolated fixture servers and runs the responsive Playwright
 smoke test in desktop and mobile viewports. It never reads the repository `.env`.
-Production uses one Fly app: the multi-stage Docker build compiles this frontend and FastAPI serves
-it from the same origin as `/api/v1`.
+The multi-stage Docker build still compiles this frontend and has FastAPI serve it from the same
+origin as `/api/v1`, but nothing deploys it: the app is local-only (see "Local matchup hub").
