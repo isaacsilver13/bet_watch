@@ -68,17 +68,17 @@ def situation(
     tz: Optional[str],
 ) -> Situation:
     """`previous` is the team's last game before `kickoff`; lat/lon/tz are this game's venue."""
-    if previous is None:
+    if previous is None or previous.season != season:
+        # No earlier game this season: last year's finale is an offseason, not rest or travel.
         return Situation(None, False, False, None, None, None)
     days = rest_days(previous.kickoff, kickoff)
-    same_season = previous.season == season  # a gap after last year's finale is not a bye
     miles = None
     if None not in (previous.lat, previous.lon, lat, lon):
         miles = round(great_circle_miles(previous.lat, previous.lon, lat, lon))
     return Situation(
         rest_days=days,
-        short_week=same_season and days <= SHORT_WEEK_DAYS,
-        off_bye=same_season and days >= BYE_DAYS,
+        short_week=days <= SHORT_WEEK_DAYS,
+        off_bye=days >= BYE_DAYS,
         travel_miles=miles,
         tz_crossed=tz_hours_crossed(previous.tz, tz, kickoff),
         previous_opponent=previous.opponent,

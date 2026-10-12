@@ -7,6 +7,7 @@ SEA before it:  wk2 W 27-17 vs DEN (SEA +1) | wk3 W 30-23 vs LAR (SEA -2.5)
 """
 
 import asyncio
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from app.api.slate import get_now, get_session_factory
@@ -72,7 +73,7 @@ def _offense(**overrides):
     return base
 
 
-async def _setup(tmp_path, espn_close: bool = False) -> None:
+async def _setup(tmp_path, espn_close: bool = False, preseason: bool = False) -> None:
     factory = await new_session_factory(tmp_path)
     await seed_teams(factory)
     games = GamesRepository(factory)
@@ -82,6 +83,16 @@ async def _setup(tmp_path, espn_close: bool = False) -> None:
     await games.upsert_games(
         "nfl", "nflverse", parse_games_csv(_csv(*[_row(**row) for row in HISTORY])), NOW
     )
+    if preseason:  # an August exhibition DEN won 30-0, which must not count anywhere
+        den = next(r for r in parse_scoreboard(load_json("espn/scoreboard_week6.json"))
+                   if r.espn_id == VIEWED)
+        exhibition = replace(
+            den, espn_id="900101", season_type="PRE", week=2, status="final",
+            start_time=datetime(2026, 8, 22, 23, tzinfo=timezone.utc), away_name="ARI",
+            home_score=30, away_score=0, home_qb="Preseason QB",
+            lines=(LineRecord(kind="close", spread_home=-3.0, total=40.0),),
+        )
+        await games.upsert_games("nfl", "espn", [exhibition], NOW)
     if espn_close:  # ESPN's close for DEN-KC disagrees with nflverse's (-3): DEN -4 pushes
         await games.save_lines(
             "401900002", "espn", [LineRecord(kind="close", spread_home=-4.0, total=44.0)], NOW
@@ -106,8 +117,8 @@ async def _setup(tmp_path, espn_close: bool = False) -> None:
     await context.save_weather(game_id, WeatherRecord(55.4, 11.8, 60, "Overcast"), forecast_time)
 
 
-def _client(tmp_path, espn_close: bool = False) -> TestClient:
-    asyncio.run(_setup(tmp_path, espn_close))
+def _client(tmp_path, espn_close: bool = False, preseason: bool = False) -> TestClient:
+    asyncio.run(_setup(tmp_path, espn_close, preseason))
     # A fresh engine: pooled connections from setup's event loop must not leak into TestClient's.
     factory = create_session_factory(create_async_engine(db_url(tmp_path)))
     app.dependency_overrides[get_session_factory] = lambda: factory
@@ -243,3 +254,17 @@ def test_a_finished_game_shows_only_what_was_known_before_kickoff(tmp_path) -> N
     assert ctx["data_as_of"]["injuries"] is None
     assert den["situation"]["previous_opponent"] == "SEA"
     assert den["efficiency"]["off_epa_play"]["value"] == 0.104  # the wk2 stats were in by then
+
+
+def test_preseason_games_do_not_count_and_a_season_opener_has_no_travel_from_last_year(
+    tmp_path,
+) -> None:
+    ctx = _context(_client(tmp_path, preseason=True), espn_id="401900002")  # DEN vs KC, week 1
+    den = ctx["home"]
+    assert _tally(den["records"]["season"]["su"]) == (0, 0, 0)  # the 30-0 exhibition is ignored
+    assert _tally(den["records"]["last_n"]["su"]) == (1, 0, 0)  # only the 2025 week-14 win
+    assert den["qb_flag"] is None
+    spot = den["situation"]
+    assert spot["previous_opponent"] is None and spot["travel_miles"] is None
+    assert spot["rest_days"] is None and spot["tz_crossed"] is None
+    assert spot["short_week"] is False and spot["off_bye"] is False

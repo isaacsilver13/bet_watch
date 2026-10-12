@@ -97,3 +97,8 @@ def test_cli_rejects_unknown_job() -> None:
     with pytest.raises(SystemExit) as excinfo:
         asyncio.run(main(["not-a-job"]))
     assert excinfo.value.code == 2
+
+
+def test_history_runs_daily_so_a_missed_tuesday_cannot_hide_the_qb_flag() -> None:
+    sunday = datetime(2026, 10, 11, 15, tzinfo=timezone.utc)
+    assert [s.key for s in NflHistoryJob().slots(sunday)] == ["nfl_history:2026-10-11"]

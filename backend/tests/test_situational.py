@@ -58,3 +58,12 @@ def test_arizona_has_no_dst_so_the_gap_to_pacific_changes() -> None:
 def test_primetime_is_seven_pm_eastern_or_later() -> None:
     assert is_primetime(datetime(2026, 10, 12, 0, 15, tzinfo=timezone.utc))      # Sun 8:15pm ET
     assert not is_primetime(datetime(2026, 10, 11, 20, 25, tzinfo=timezone.utc))  # 4:25pm ET
+
+
+def test_a_game_from_last_season_gives_no_rest_travel_or_opponent() -> None:
+    finale = Stop(datetime(2026, 1, 4, 18, tzinfo=timezone.utc), 2025, 39.0, -94.5,
+                  "America/Chicago", "LV")
+    opener = datetime(2026, 9, 10, 0, 20, tzinfo=timezone.utc)
+    s = situation(finale, opener, 2026, 42.77, -78.79, "America/New_York")
+    assert s == situation(None, opener, 2026, 42.77, -78.79, "America/New_York")
+    assert s.rest_days is None and s.travel_miles is None and s.previous_opponent is None

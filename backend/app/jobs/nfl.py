@@ -13,7 +13,6 @@ from app.storage.games_repository import GamesRepository
 logger = logging.getLogger(__name__)
 NFL = "nfl"
 CLOSE_LOOKBACK = timedelta(days=14)
-TUESDAY = 1
 
 
 def _now() -> datetime:
@@ -37,7 +36,9 @@ class NflHistoryJob:
     max_attempts = 3
 
     def slots(self, now: datetime) -> list[Slot]:
-        return daily_slot(self.name, now, weekday=TUESDAY)
+        # Daily, not Tuesday-only: it also carries each game's starting QB, and a PC that was
+        # off on Tuesday would otherwise leave the matchup page's QB flag blank all week.
+        return daily_slot(self.name, now)
 
     async def run(self, ctx: JobContext, slot: Slot) -> str:
         response = await ctx.http.get(GAMES_CSV_URL)

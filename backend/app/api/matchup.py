@@ -37,6 +37,7 @@ from app.storage.games_repository import aware
 from app.storage.models import Game, GameLine, Injury, Team, TeamGameStat, Venue
 
 router = APIRouter(prefix="/api/v1")
+COUNTED_SEASON_TYPES = ("REG", "POST")  # preseason results are not form
 
 
 def _tally(value: Tally) -> TallyView:
@@ -57,6 +58,7 @@ async def _results(session: AsyncSession, sport: str, team_ids: set[int]) -> lis
             select(Game).where(
                 Game.sport == sport,
                 Game.status == "final",
+                Game.season_type.in_(COUNTED_SEASON_TYPES),
                 Game.home_score.is_not(None),
                 Game.away_score.is_not(None),
                 or_(Game.home_team_id.in_(team_ids), Game.away_team_id.in_(team_ids)),
@@ -100,6 +102,7 @@ async def _previous(
         .where(
             Game.sport == sport,
             Game.status == "final",
+            Game.season_type.in_(COUNTED_SEASON_TYPES),
             Game.start_time < before,
             or_(Game.home_team_id == team_id, Game.away_team_id == team_id),
         )
