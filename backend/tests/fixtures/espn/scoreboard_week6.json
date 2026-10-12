@@ -1,0 +1,98 @@
+{
+  "season": {"type": 2, "year": 2026},
+  "week": {"number": 6},
+  "events": [
+    {
+      "id": "401872995",
+      "date": "2026-10-16T00:15Z",
+      "season": {"year": 2026, "type": 2},
+      "week": {"number": 6},
+      "competitions": [{
+        "neutralSite": false,
+        "venue": {"id": "3937", "fullName": "Empower Field at Mile High", "indoor": false},
+        "status": {"type": {"name": "STATUS_SCHEDULED", "state": "pre", "completed": false}},
+        "competitors": [
+          {"homeAway": "home", "score": "0", "team": {"id": "7", "abbreviation": "DEN", "displayName": "Denver Broncos"}},
+          {"homeAway": "away", "score": "0", "team": {"id": "26", "abbreviation": "SEA", "displayName": "Seattle Seahawks"}}
+        ],
+        "odds": [{
+          "provider": {"id": "100", "name": "DraftKings"},
+          "spread": 1.5,
+          "overUnder": 42.5,
+          "pointSpread": {
+            "home": {"close": {"line": "+1.5", "odds": "-110"}, "open": {"line": "+2.5", "odds": "-115"}},
+            "away": {"close": {"line": "-1.5", "odds": "-110"}, "open": {"line": "-2.5", "odds": "-105"}}
+          },
+          "total": {
+            "over": {"close": {"line": "o42.5", "odds": "-110"}, "open": {"line": "o43.5", "odds": "-110"}},
+            "under": {"close": {"line": "u42.5", "odds": "-110"}, "open": {"line": "u43.5", "odds": "-110"}}
+          },
+          "moneyline": {
+            "home": {"close": {"odds": "+102"}, "open": {"odds": "+110"}},
+            "away": {"close": {"odds": "-122"}, "open": {"odds": "-130"}}
+          }
+        }]
+      }]
+    },
+    {
+      "id": "401872964",
+      "date": "2026-10-04T17:00Z",
+      "season": {"year": 2026, "type": 2},
+      "week": {"number": 4},
+      "competitions": [{
+        "neutralSite": false,
+        "venue": {"id": "3679", "fullName": "Huntington Bank Field", "indoor": false},
+        "status": {"type": {"name": "STATUS_FINAL", "state": "post", "completed": true}},
+        "competitors": [
+          {"homeAway": "home", "score": "27", "team": {"id": "5", "abbreviation": "CLE", "displayName": "Cleveland Browns"}},
+          {"homeAway": "away", "score": "24", "team": {"id": "23", "abbreviation": "PIT", "displayName": "Pittsburgh Steelers"}}
+        ]
+      }]
+    },
+    {
+      "id": "401872981",
+      "date": "2026-10-11T13:30Z",
+      "season": {"year": 2026, "type": 2},
+      "week": {"number": 6},
+      "competitions": [{
+        "neutralSite": true,
+        "venue": {"id": "2227", "fullName": "Wembley Stadium", "indoor": false},
+        "status": {"type": {"name": "STATUS_IN_PROGRESS", "state": "in", "completed": false}},
+        "competitors": [
+          {"homeAway": "home", "score": "7", "team": {"id": "30", "abbreviation": "JAX", "displayName": "Jacksonville Jaguars"}},
+          {"homeAway": "away", "score": "3", "team": {"id": "21", "abbreviation": "PHI", "displayName": "Philadelphia Eagles"}}
+        ],
+        "odds": [{
+          "provider": {"id": "100", "name": "DraftKings"},
+          "pointSpread": {
+            "home": {"close": {"line": "-8.5", "odds": "-105"}, "open": {"line": "+2.5", "odds": "-115"}},
+            "away": {"close": {"line": "+8.5", "odds": "-115"}, "open": {"line": "-2.5", "odds": "-105"}}
+          },
+          "total": {
+            "over": {"close": {"line": "o41.5", "odds": "-108"}, "open": {"line": "o44.5", "odds": "-102"}},
+            "under": {"close": {"line": "u41.5", "odds": "-112"}, "open": {"line": "u44.5", "odds": "-118"}}
+          },
+          "moneyline": {
+            "home": {"close": {"odds": "-425"}, "open": {"odds": "+110"}},
+            "away": {"close": {"odds": "+330"}, "open": {"odds": "-130"}}
+          }
+        }]
+      }]
+    },
+    {
+      "id": "401872999",
+      "date": "2026-10-18T17:00Z",
+      "season": {"year": 2026, "type": 2},
+      "week": {"number": 6},
+      "competitions": [{
+        "neutralSite": false,
+        "venue": {"id": "3948", "fullName": "Hard Rock Stadium", "indoor": false},
+        "status": {"type": {"name": "STATUS_POSTPONED", "state": "post", "completed": false}},
+        "competitors": [
+          {"homeAway": "home", "score": "0", "team": {"id": "15", "abbreviation": "MIA", "displayName": "Miami Dolphins"}},
+          {"homeAway": "away", "score": "0", "team": {"id": "2", "abbreviation": "BUF", "displayName": "Buffalo Bills"}}
+        ]
+      }]
+    }
+  ]
+}
