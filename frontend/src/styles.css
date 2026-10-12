@@ -233,3 +233,10 @@ footer { gap: 20px; padding-top: 20px; }
 .slate-lines dd { margin: 2px 0 0; font-family: "DM Mono", ui-monospace, monospace; }
 .slate-move { color: var(--warning); font-size: 0.8rem; margin: 10px 0 0; }
 .slate-source { color: var(--muted); font-size: 0.7rem; margin: 6px 0 0; }
+.slate-card-head h3 a { color: inherit; text-decoration: none; }
+.slate-card-head h3 a:hover { text-decoration: underline; }
+.slate-weather { color: var(--secondary); font-size: 0.8rem; margin: 10px 0 0; }
+.injury-grid { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 12px; }
+.injury-list { margin: 0; padding-left: 18px; }
+.injury-list li { margin: 4px 0; }
+select { min-height: 39px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--surface-solid); padding: 8px 11px; }

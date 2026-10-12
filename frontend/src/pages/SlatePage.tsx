@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { GlassCard } from "../components/GlassCard";
-import { fetchSlate, formatSpread, type SlateGame, type WeekRef } from "../lib/slate";
+import { fetchSlate, formatSpread, weatherText, type SlateGame, type WeekRef } from "../lib/slate";
 
 const STATUS_LABELS: Record<string, string> = {
   in_progress: "Live",
@@ -39,7 +39,7 @@ function GameCard({ game }: { game: SlateGame }) {
   return (
     <GlassCard className="slate-card">
       <div className="slate-card-head">
-        <h3>{game.away.abbr} @ {game.home.abbr}</h3>
+        <h3><Link to={`/game/${game.id}`}>{game.away.abbr} @ {game.home.abbr}</Link></h3>
         <span className="slate-status">{statusText(game)}</span>
       </div>
       <p className="slate-venue">{game.venue ?? "Venue TBD"}{game.neutral ? " · neutral site" : ""}</p>
@@ -48,6 +48,7 @@ function GameCard({ game }: { game: SlateGame }) {
         <div><dt>Total</dt><dd>{latest?.total != null ? `O/U ${latest.total}` : "—"}</dd></div>
         <div><dt>Open</dt><dd>{opener ? `${formatSpread(game, opener.spread_home)} · ${opener.total ?? "—"}` : "—"}</dd></div>
       </dl>
+      {weatherText(game) && <p className="slate-weather">{weatherText(game)}</p>}
       {game.spread_move ? <p className="slate-move">Home line {game.spread_move > 0 ? "+" : ""}{game.spread_move} since open</p> : null}
       {latest && <p className="slate-source">{latest.source} {game.lines.close ? "close" : "current"} line</p>}
     </GlassCard>

@@ -13,6 +13,14 @@ export interface SlateLine {
   captured_at: string;
 }
 
+export interface SlateWeather {
+  temp_f: number | null;
+  wind_mph: number | null;
+  precip_pct: number | null;
+  conditions: string | null;
+  fetched_at: string;
+}
+
 export type LineKind = "open" | "current" | "close";
 
 export interface SlateGame {
@@ -28,11 +36,13 @@ export interface SlateGame {
   home_score: number | null;
   away_score: number | null;
   venue: string | null;
+  roof: string | null;
   neutral: boolean;
   lines: Partial<Record<LineKind, SlateLine>>;
   spread_move: number | null;
   total_move: number | null;
   odds_event_id: string | null;
+  weather: SlateWeather | null;
 }
 
 export interface WeekRef { season_type: string; week: number }
@@ -70,4 +80,18 @@ export function formatSpread(game: Pick<SlateGame, "home" | "away">, spreadHome:
   if (spreadHome === null || spreadHome === undefined) return "—";
   if (spreadHome === 0) return "PK";
   return spreadHome < 0 ? `${game.home.abbr} ${spreadHome}` : `${game.away.abbr} -${spreadHome}`;
+}
+
+/** "55° · 12 mph wind · Overcast" for outdoor games, "Indoors" for domes, null when unknown. */
+export function weatherText(game: Pick<SlateGame, "roof" | "weather">): string | null {
+  if (game.roof === "dome") return "Indoors";
+  const retractable = game.roof === "retractable" ? " (retractable roof)" : "";
+  const weather = game.weather;
+  if (!weather) return game.roof === "retractable" ? "Retractable roof" : null;
+  const parts = [
+    weather.temp_f !== null ? `${Math.round(weather.temp_f)}°` : null,
+    weather.wind_mph !== null ? `${Math.round(weather.wind_mph)} mph wind` : null,
+    weather.conditions,
+  ].filter((part): part is string => part !== null);
+  return parts.length ? `${parts.join(" · ")}${retractable}` : null;
 }

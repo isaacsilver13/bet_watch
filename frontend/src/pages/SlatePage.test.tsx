@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchSlate, type SlateResponse } from "../lib/slate";
+import { fetchSlate, weatherText, type SlateResponse } from "../lib/slate";
 import { SlatePage } from "./SlatePage";
 
 vi.mock("../lib/slate", async (importOriginal) => {
@@ -26,9 +26,10 @@ function slate(week: number, withGames = true): SlateResponse {
       start_time: "2026-10-16T00:15:00Z", status: "scheduled",
       home: { id: 10, abbr: "DEN", name: "Denver Broncos" },
       away: { id: 26, abbr: "SEA", name: "Seattle Seahawks" },
-      home_score: null, away_score: null, venue: "Empower Field at Mile High", neutral: false,
+      home_score: null, away_score: null, venue: "Empower Field at Mile High", roof: "outdoors", neutral: false,
       lines: { open: line(2.5, 43.5), current: line(1.5, 42.5) },
       spread_move: -1, total_move: -1, odds_event_id: null,
+      weather: { temp_f: 55.4, wind_mph: 11.8, precip_pct: 60, conditions: "Overcast", fetched_at: "2026-10-14T21:00:00Z" },
     }] : [],
   };
 }
@@ -59,6 +60,8 @@ describe("SlatePage", () => {
     expect(screen.getByText("O/U 42.5")).toBeInTheDocument();
     expect(screen.getByText("SEA -2.5 · 43.5")).toBeInTheDocument();
     expect(screen.getByText("Home line -1 since open")).toBeInTheDocument();
+    expect(screen.getByText("55° · 12 mph wind · Overcast")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "SEA @ DEN" })).toHaveAttribute("href", "/game/1");
   });
 
   it("navigates to the next week", async () => {
@@ -83,5 +86,23 @@ describe("SlatePage", () => {
     vi.mocked(fetchSlate).mockRejectedValue(new Error("Slate request failed with status 503"));
     renderAt("/nfl");
     expect(await screen.findByRole("alert")).toHaveTextContent("503");
+  });
+});
+
+describe("weatherText", () => {
+  const weather = { temp_f: 72.4, wind_mph: 3.2, precip_pct: 0, conditions: null, fetched_at: "2026-10-14T21:00:00Z" };
+
+  it("says indoors for domes, whatever the forecast", () => {
+    expect(weatherText({ roof: "dome", weather })).toBe("Indoors");
+  });
+
+  it("notes a retractable roof, with or without a forecast", () => {
+    expect(weatherText({ roof: "retractable", weather })).toBe("72° · 3 mph wind (retractable roof)");
+    expect(weatherText({ roof: "retractable", weather: null })).toBe("Retractable roof");
+  });
+
+  it("is blank when an outdoor game has no forecast yet", () => {
+    expect(weatherText({ roof: "outdoors", weather: null })).toBeNull();
+    expect(weatherText({ roof: null, weather: null })).toBeNull();
   });
 });
