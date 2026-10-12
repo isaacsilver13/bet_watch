@@ -88,3 +88,10 @@ def test_persistence_off_is_503() -> None:
 
 def test_unsupported_sport_rejected(tmp_path) -> None:
     assert _client(tmp_path).get("/api/v1/slate", params={"sport": "nba"}).status_code == 422
+
+
+def test_preseason_week_is_accepted(tmp_path) -> None:
+    response = _client(tmp_path).get(
+        "/api/v1/slate", params={"sport": "nfl", "season": 2026, "season_type": "PRE", "week": 3}
+    )
+    assert response.status_code == 200 and response.json()["games"] == []

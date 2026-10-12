@@ -99,6 +99,12 @@ class GamesRepository:
                 venue_id = await self._venue_id(session, record, venues, home_venues.get(home_id))
                 game = games.get(record.espn_id)
                 is_new = game is None
+                # ESPN owns sides, venue and neutral once a game exists; history only fills gaps.
+                owns_layout = is_new or source == "espn"
+                if not owns_layout and (game.home_team_id, game.away_team_id) != (home_id, away_id):
+                    # Sides disagree, so its spread_home would flip sign against this game.
+                    result.skipped.append(record.espn_id)
+                    continue
                 if game is None:
                     game = Game(espn_id=record.espn_id, sport=sport)
                     session.add(game)
@@ -107,11 +113,12 @@ class GamesRepository:
                 game.season_type = record.season_type
                 game.week = record.week
                 game.start_time = record.start_time
-                game.home_team_id = home_id
-                game.away_team_id = away_id
-                game.neutral = record.neutral
-                if venue_id is not None or is_new:
-                    game.venue_id = venue_id
+                if owns_layout:
+                    game.home_team_id = home_id
+                    game.away_team_id = away_id
+                    game.neutral = record.neutral
+                    if venue_id is not None or is_new:
+                        game.venue_id = venue_id
                 if is_new or source == "espn" or record.status == "final":
                     game.status = record.status
                 if record.home_score is not None:

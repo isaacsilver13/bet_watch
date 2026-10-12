@@ -123,7 +123,13 @@ def parse_scoreboard(payload: Mapping) -> list[GameRecord]:
                 venue_espn_id=str(venue["id"]) if venue.get("id") else None,
                 venue_name=venue.get("fullName"),
                 venue_indoor=venue.get("indoor"),
-                lines=parse_odds(odds, started) if odds else (),
+                # Once a game starts, the scoreboard's "close" can be a live in-game price; the true
+                # close comes only from the summary's pickcenter (espn_closes).
+                lines=tuple(
+                    line
+                    for line in (parse_odds(odds, started) if odds else ())
+                    if line.kind != "close"
+                ),
             )
         )
     return games

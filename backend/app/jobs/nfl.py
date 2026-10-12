@@ -68,9 +68,15 @@ class EspnScoreboardJob:
         season = current.get("season") or {}
         week = (current.get("week") or {}).get("number")
         if season.get("year") and week:
-            payloads.append(
-                await fetch_scoreboard(ctx.http, NFL, season["year"], season.get("type"), week + 1)
-            )
+            # Previous week too, so a game last seen live still gets its final after a PC-off gap.
+            # ponytail: not across season types (REG 18 -> POST 1); Tuesday's nflverse run covers it
+            for other in (week - 1, week + 1):
+                if other >= 1:
+                    payloads.append(
+                        await fetch_scoreboard(
+                            ctx.http, NFL, season["year"], season.get("type"), other
+                        )
+                    )
         records = [game for payload in payloads for game in parse_scoreboard(payload)]
         if not records:
             return "empty"

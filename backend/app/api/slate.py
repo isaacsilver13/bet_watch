@@ -86,7 +86,7 @@ async def resolve_week(
 async def get_slate(
     sport: str = Query("nfl", pattern="^nfl$"),
     season: Optional[int] = Query(None, ge=2000, le=2100),
-    season_type: Optional[str] = Query(None, pattern="^(REG|POST)$"),
+    season_type: Optional[str] = Query(None, pattern="^(PRE|REG|POST)$"),
     week: Optional[int] = Query(None, ge=1, le=25),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     now: datetime = Depends(get_now),

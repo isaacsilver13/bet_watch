@@ -12,7 +12,8 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 function weekLabel(ref: WeekRef): string {
-  return ref.season_type === "POST" ? `Playoffs round ${ref.week}` : `Week ${ref.week}`;
+  if (ref.season_type === "POST") return `Playoffs round ${ref.week}`;
+  return ref.season_type === "PRE" ? `Preseason week ${ref.week}` : `Week ${ref.week}`;
 }
 
 function weekPath(season: number, ref: WeekRef): string {
