@@ -14,3 +14,17 @@ test-results/
 /frontend/vite.config.js
 /frontend/vite.config.d.ts
 /data/
+
+# Private data: the repo is public, the data is not. Never commit these.
+.env.*
+!.env.example
+.superpowers/
+*.sql
+*.dump
+*.sqlite
+*.sqlite3
+*.db
+*.csv.gz
+*.json.gz
+/backups/
+/exports/
