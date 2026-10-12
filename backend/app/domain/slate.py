@@ -23,6 +23,14 @@ class LineView(BaseModel):
     captured_at: datetime
 
 
+class WeatherView(BaseModel):
+    temp_f: Optional[float]
+    wind_mph: Optional[float]
+    precip_pct: Optional[float]
+    conditions: Optional[str]
+    fetched_at: datetime
+
+
 class SlateGame(BaseModel):
     id: int
     espn_id: str
@@ -36,11 +44,13 @@ class SlateGame(BaseModel):
     home_score: Optional[int]
     away_score: Optional[int]
     venue: Optional[str]
+    roof: Optional[str]  # outdoors | dome | retractable
     neutral: bool
     lines: dict[str, LineView]
     spread_move: Optional[float]
     total_move: Optional[float]
     odds_event_id: Optional[str]
+    weather: Optional[WeatherView] = None  # outdoor games only
 
 
 class WeekRef(BaseModel):

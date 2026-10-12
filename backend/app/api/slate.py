@@ -7,15 +7,15 @@ from functools import lru_cache
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
 from app.config import load_settings
-from app.domain.slate import LineView, SlateGame, SlateResponse, TeamView, WeekRef
+from app.domain.slate import LineView, SlateGame, SlateResponse, TeamView, WeatherView, WeekRef
 from app.storage.database import create_engine, create_session_factory
 from app.storage.games_repository import LINE_FIELDS, aware
-from app.storage.models import Game, GameLine, Team, Venue
+from app.storage.models import Game, GameLine, Team, Venue, Weather
 
 router = APIRouter(prefix="/api/v1")
 SOURCE_PRIORITY = ("espn", "nflverse")
@@ -82,6 +82,77 @@ async def resolve_week(
     return (row[0], row[1], row[2]) if row else None
 
 
+async def load_slate_games(session: AsyncSession, *conditions: ColumnElement) -> list[SlateGame]:
+    """Games matching `conditions`, in kickoff order, with lines, venue roof and weather."""
+    home, away = aliased(Team), aliased(Team)
+    rows = (
+        await session.execute(
+            select(Game, home, away, Venue.name, Venue.roof)
+            .join(home, Game.home_team_id == home.id)
+            .join(away, Game.away_team_id == away.id)
+            .outerjoin(Venue, Game.venue_id == Venue.id)
+            .where(*conditions)
+            .order_by(Game.start_time, Game.id)
+        )
+    ).all()
+    game_ids = [row[0].id for row in rows]
+    lines_by_game: dict[int, list[GameLine]] = defaultdict(list)
+    weather_by_game: dict[int, Weather] = {}
+    if game_ids:
+        for line in (
+            await session.scalars(select(GameLine).where(GameLine.game_id.in_(game_ids)))
+        ).all():
+            lines_by_game[line.game_id].append(line)
+        for weather in (
+            await session.scalars(select(Weather).where(Weather.game_id.in_(game_ids)))
+        ).all():
+            weather_by_game[weather.game_id] = weather
+
+    games = []
+    for game, home_team, away_team, venue_name, venue_roof in rows:
+        lines = pick_lines(lines_by_game[game.id])
+        weather = weather_by_game.get(game.id)
+        games.append(
+            SlateGame(
+                id=game.id,
+                espn_id=game.espn_id,
+                season=game.season,
+                season_type=game.season_type,
+                week=game.week,
+                start_time=aware(game.start_time),
+                status=game.status,
+                home=TeamView(id=home_team.id, abbr=home_team.abbr, name=home_team.name),
+                away=TeamView(id=away_team.id, abbr=away_team.abbr, name=away_team.name),
+                home_score=game.home_score,
+                away_score=game.away_score,
+                venue=venue_name,
+                roof=venue_roof,
+                neutral=game.neutral,
+                lines={
+                    kind: LineView(
+                        source=row.source,
+                        captured_at=aware(row.captured_at),
+                        **{name: getattr(row, name) for name in LINE_FIELDS},
+                    )
+                    for kind, row in lines.items()
+                },
+                spread_move=movement(lines, "spread_home"),
+                total_move=movement(lines, "total"),
+                odds_event_id=game.event_id,
+                weather=None
+                if weather is None
+                else WeatherView(
+                    temp_f=weather.temp_f,
+                    wind_mph=weather.wind_mph,
+                    precip_pct=weather.precip_pct,
+                    conditions=weather.conditions,
+                    fetched_at=aware(weather.fetched_at),
+                ),
+            )
+        )
+    return games
+
+
 @router.get("/slate", response_model=SlateResponse)
 async def get_slate(
     sport: str = Query("nfl", pattern="^nfl$"),
@@ -110,64 +181,12 @@ async def get_slate(
             (WeekRef(season_type=kind, week=number) for kind, number in week_rows),
             key=lambda ref: (SEASON_TYPE_ORDER.get(ref.season_type, 9), ref.week),
         )
-
-        home, away = aliased(Team), aliased(Team)
-        rows = (
-            await session.execute(
-                select(Game, home, away, Venue.name)
-                .join(home, Game.home_team_id == home.id)
-                .join(away, Game.away_team_id == away.id)
-                .outerjoin(Venue, Game.venue_id == Venue.id)
-                .where(
-                    Game.sport == sport,
-                    Game.season == season,
-                    Game.season_type == season_type,
-                    Game.week == week,
-                )
-                .order_by(Game.start_time, Game.id)
-            )
-        ).all()
-        game_ids = [row[0].id for row in rows]
-        line_rows = (
-            (await session.scalars(select(GameLine).where(GameLine.game_id.in_(game_ids)))).all()
-            if game_ids
-            else []
-        )
-
-    lines_by_game: dict[int, list[GameLine]] = defaultdict(list)
-    for line in line_rows:
-        lines_by_game[line.game_id].append(line)
-
-    games = []
-    for game, home_team, away_team, venue_name in rows:
-        lines = pick_lines(lines_by_game[game.id])
-        games.append(
-            SlateGame(
-                id=game.id,
-                espn_id=game.espn_id,
-                season=game.season,
-                season_type=game.season_type,
-                week=game.week,
-                start_time=aware(game.start_time),
-                status=game.status,
-                home=TeamView(id=home_team.id, abbr=home_team.abbr, name=home_team.name),
-                away=TeamView(id=away_team.id, abbr=away_team.abbr, name=away_team.name),
-                home_score=game.home_score,
-                away_score=game.away_score,
-                venue=venue_name,
-                neutral=game.neutral,
-                lines={
-                    kind: LineView(
-                        source=row.source,
-                        captured_at=aware(row.captured_at),
-                        **{name: getattr(row, name) for name in LINE_FIELDS},
-                    )
-                    for kind, row in lines.items()
-                },
-                spread_move=movement(lines, "spread_home"),
-                total_move=movement(lines, "total"),
-                odds_event_id=game.event_id,
-            )
+        games = await load_slate_games(
+            session,
+            Game.sport == sport,
+            Game.season == season,
+            Game.season_type == season_type,
+            Game.week == week,
         )
     return SlateResponse(
         sport=sport, season=season, season_type=season_type, week=week, weeks=weeks, games=games

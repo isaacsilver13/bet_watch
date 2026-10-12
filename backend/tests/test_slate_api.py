@@ -3,11 +3,15 @@ from datetime import datetime, timezone
 
 from app.api.slate import get_now, get_session_factory
 from app.ingest.espn import parse_pickcenter, parse_scoreboard
+from app.ingest.open_meteo import WeatherRecord
 from app.ingest.seed import seed_teams
 from app.main import app
+from app.storage.context_repository import ContextRepository
 from app.storage.database import create_session_factory
 from app.storage.games_repository import GamesRepository
+from app.storage.models import Game
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from tests.matchup_helpers import db_url, load_json, new_session_factory
@@ -95,3 +99,23 @@ def test_preseason_week_is_accepted(tmp_path) -> None:
         "/api/v1/slate", params={"sport": "nfl", "season": 2026, "season_type": "PRE", "week": 3}
     )
     assert response.status_code == 200 and response.json()["games"] == []
+
+
+def test_slate_carries_the_venue_roof_and_the_latest_weather(tmp_path) -> None:
+    client = _client(tmp_path)
+
+    async def add_weather() -> None:
+        factory = create_session_factory(create_async_engine(db_url(tmp_path)))
+        async with factory() as session:
+            game_id = await session.scalar(select(Game.id).where(Game.espn_id == "401872995"))
+        await ContextRepository(factory).save_weather(
+            game_id, WeatherRecord(55.4, 11.8, 60, "Overcast"), NOW
+        )
+
+    asyncio.run(add_weather())
+    body = client.get("/api/v1/slate", params={"sport": "nfl", "season": 2026, "week": 6}).json()
+    games = {g["espn_id"]: g for g in body["games"]}
+    den = games["401872995"]
+    assert den["roof"] == "outdoors"
+    assert (den["weather"]["temp_f"], den["weather"]["conditions"]) == (55.4, "Overcast")
+    assert games["401872981"]["weather"] is None  # no forecast stored for the London game
