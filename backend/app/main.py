@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import error_log
 from app.api.routes import router
+from app.api.slate import router as slate_router
 
 # Uvicorn only configures its own loggers, so without this the app's per-fetch
 # INFO lines are dropped and /health/errors never sees a failure.
@@ -24,6 +25,7 @@ app = FastAPI(
     description="Canonical NFL and NBA odds comparison API.",
 )
 app.include_router(router)
+app.include_router(slate_router)
 
 # Serves the built frontend from the same app/port as the API, so the two no
 # longer need separate Fly apps. No-op locally, where this directory doesn't

@@ -1,12 +1,15 @@
 import os
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from dotenv import dotenv_values
 
-_DOTENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_DOTENV_PATH = _REPO_ROOT / ".env"
 _DEFAULT_DATABASE_URL = (
     "postgresql+asyncpg://betting_aggregator:betting_aggregator@127.0.0.1:5433/"
     "betting_aggregator"
@@ -20,6 +23,40 @@ def _setting(name: str, default: str) -> str:
 
     file_value = dotenv_values(_DOTENV_PATH).get(name)
     return file_value if file_value is not None else default
+
+
+_VALID_REGIONS = {"us", "us2", "uk", "eu", "au"}
+_BOOKMAKER_KEY = re.compile(r"^[a-z0-9_]+$")
+_DEFAULT_KALSHI_BASE_URL = "https://external-api.kalshi.com/trade-api/v2"
+
+
+def _parse_regions(raw: str) -> str:
+    regions = [r.strip().lower() for r in raw.split(",") if r.strip()]
+    if not regions or not set(regions) <= _VALID_REGIONS:
+        raise ValueError(f"ODDS_REGIONS must be a comma list of {sorted(_VALID_REGIONS)}")
+    return ",".join(dict.fromkeys(regions))
+
+
+def _parse_bookmakers(raw: str) -> tuple:
+    keys = tuple(dict.fromkeys(k.strip().lower() for k in raw.split(",") if k.strip()))
+    if not all(_BOOKMAKER_KEY.match(k) for k in keys):
+        raise ValueError("ODDS_BOOKMAKERS must be comma-separated provider keys like 'draftkings'")
+    return keys
+
+
+def _parse_kalshi_base_url(raw: str) -> str:
+    value = raw.strip().rstrip("/")
+    parsed = urlparse(value)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("KALSHI_BASE_URL must be an HTTPS URL without credentials or a query")
+    return value
 
 
 class ProviderMode(str, Enum):
@@ -41,6 +78,15 @@ class Settings:
     provider_timeout_seconds: float
     provider_max_retries: int
     provider_backoff_seconds: float
+    odds_regions: str = "us"
+    odds_bookmakers: tuple = ()  # non-empty allowlist wins over odds_regions
+    kalshi_enabled: bool = False
+    kalshi_cache_ttl_seconds: int = 300
+    kalshi_base_url: str = _DEFAULT_KALSHI_BASE_URL
+    admin_refresh_secret: Optional[str] = None
+    admin_refresh_budget: int = 4
+    admin_refresh_budget_window_seconds: int = 86400
+    raw_data_dir: str = "data/raw"
 
 
 def load_settings() -> Settings:
@@ -67,4 +113,17 @@ def load_settings() -> Settings:
         provider_timeout_seconds=float(_setting("PROVIDER_TIMEOUT_SECONDS", "15")),
         provider_max_retries=int(_setting("PROVIDER_MAX_RETRIES", "2")),
         provider_backoff_seconds=float(_setting("PROVIDER_BACKOFF_SECONDS", "0.5")),
+        odds_regions=_parse_regions(_setting("ODDS_REGIONS", "us")),
+        odds_bookmakers=_parse_bookmakers(_setting("ODDS_BOOKMAKERS", "")),
+        kalshi_enabled=_setting("KALSHI_ENABLED", "false").strip().lower() == "true",
+        kalshi_cache_ttl_seconds=int(_setting("KALSHI_CACHE_TTL_SECONDS", "300")),
+        kalshi_base_url=_parse_kalshi_base_url(
+            _setting("KALSHI_BASE_URL", _DEFAULT_KALSHI_BASE_URL)
+        ),
+        admin_refresh_secret=_setting("ADMIN_REFRESH_SECRET", "") or None,
+        admin_refresh_budget=int(_setting("ADMIN_REFRESH_BUDGET", "4")),
+        admin_refresh_budget_window_seconds=int(
+            _setting("ADMIN_REFRESH_BUDGET_WINDOW_SECONDS", "86400")
+        ),
+        raw_data_dir=_setting("RAW_DATA_DIR", "").strip() or str(_REPO_ROOT / "data" / "raw"),
     )

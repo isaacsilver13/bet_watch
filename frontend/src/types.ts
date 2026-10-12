@@ -73,6 +73,7 @@ export interface ProviderDetails {
   last_refreshed_at: string | null;
   error_type: string | null;
   quota_remaining: number | null;
+  cache_age_seconds: number | null;
 }
 
 export interface ComparisonResponse {
@@ -80,4 +81,57 @@ export interface ComparisonResponse {
   provider_status: Record<string, string>;
   provider_details: Record<string, ProviderDetails>;
   events: EventComparison[];
+}
+
+export type MatchStatus = "matched" | "unmatched" | "ambiguous";
+
+export interface PredictionContract {
+  venue: string;
+  contract_id: string;
+  source_event_id: string;
+  title: string;
+  outcome: string;
+  url: string;
+  rules: string;
+  probability: number | null;
+  last_price: number | null;
+  best_bid: number | null;
+  best_ask: number | null;
+  midpoint: number | null;
+  spread: number | null;
+  bid_size: number | null;
+  ask_size: number | null;
+  volume: number | null;
+  open_interest: number | null;
+  liquidity: number | null;
+  status: string;
+  close_time: string | null;
+  metadata_updated_at: string | null;
+  observed_at: string;
+  rules_primary: string;
+  rules_secondary: string;
+  match_status: MatchStatus;
+  match_reason: string;
+  event_id: string | null;
+  matched_selection: string | null;
+}
+
+export interface PredictionMarketsResponse {
+  generated_at: string;
+  provider_status: Record<string, string>;
+  provider_details: Record<string, ProviderDetails>;
+  contract_counts: Record<string, number>;
+  contracts: PredictionContract[];
+}
+
+export interface StatusResponse {
+  status: string;
+  provider: string;
+  provider_status: string;
+  data_stale: boolean;
+  generated_at: string | null;
+  event_count: number;
+  coverage: { regions: string; bookmakers: string[] };
+  capabilities: { public_expensive_refresh: boolean };
+  prediction_markets: { kalshi_enabled: boolean };
 }

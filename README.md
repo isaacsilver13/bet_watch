@@ -15,8 +15,35 @@ Standalone NFL and NBA odds comparison app.
     provider-specific offer IDs remain attached to each observation.
 - Cached refreshes use single-flight locking, stale last-known-good fallback,
     retry/backoff, and configurable low-quota throttling.
+- Sportsbook coverage is configurable: `ODDS_BOOKMAKERS` (allowlist, wins) or `ODDS_REGIONS`;
+  selected coverage is shown in `/api/v1/status`.
+- Optional read-only Kalshi prediction-market contracts (`KALSHI_ENABLED=true`) are served from
+  `GET /api/v1/prediction-markets?sport=nfl|nba`, separate from `/odds` so they never enter the
+  sportsbook grid or best-price logic. Only two-sided game-winner contracts are matched to a
+  sportsbook game (teams + date); everything else is shown as unmatched behind a UI filter.
+  Fixture mode serves committed sample payloads and never contacts Kalshi.
+- The responsive frontend uses one sportsbook matrix per game, URL-backed league/date/team/market
+  filters, source-specific stale/error states, and paired Kalshi outcomes with last trade labeled
+  separately from bid and ask.
 - `GET /api/v1/history?event_id=...&market_type=...` reads immutable historical
     observations when persistence is enabled.
+
+## Local matchup hub
+
+This app is **local-only**: it runs on your PC against docker-compose Postgres and will hold
+private data. CI no longer deploys; the existing Fly app is left as it is until the owner
+decides what to do with it. Analysis here is statistically honest context, not betting advice.
+
+1. `docker compose up -d postgres`
+2. `copy .env.example .env` (defaults: fixture odds, persistence on)
+3. `alembic upgrade head`
+4. `python -m app.jobs seed`, then `python -m app.jobs nfl_history`, then
+   `python -m app.jobs espn_scoreboard`, then `python -m app.jobs espn_closes`
+5. `uvicorn app.main:app --app-dir backend --reload --port 8000`, and `npm run dev` in `frontend/`
+6. Open `http://localhost:5173/nfl`. The odds board is at `/odds`.
+7. Optional: `powershell -ExecutionPolicy Bypass -File scripts/register_run_due_task.ps1` runs
+   `python -m app.jobs run-due` every 15 minutes while the PC is on. Hours the PC was off are
+   marked `missed` once and never retried.
 
 ## Run locally
 
@@ -97,9 +124,25 @@ The API surface is intentionally read-only:
 - `GET /api/v1/odds?sport=...&event_id=...&market_type=...&force_refresh=true`
 - `GET /api/v1/history?event_id=<canonical-id>&market_type=<market>&limit=...`
 
-The comparison board includes a refresh action on each event. It refreshes
-only the currently selected market for that event and merges the result into
-the existing board, leaving the other events and markets in place.
+When the server reports that public expensive refresh is safe (fixture mode), the comparison
+board includes refresh actions for the board and individual events. Live public clients use the
+server cache instead.
+
+### Paid-request controls
+
+`force_refresh=true` and `include_props=true` can spend provider quota, so they only
+take effect with the `X-Admin-Token` header matching `ADMIN_REFRESH_SECRET`. Anonymous
+requests are still answered (200) from the cache / last saved snapshot, with an
+`X-Refresh-Ignored: unauthorized` response header. In live mode with no secret
+configured these actions are disabled. Admin refreshes are throttled per client and by a
+global budget (`ADMIN_REFRESH_BUDGET` per `ADMIN_REFRESH_BUDGET_WINDOW_SECONDS`, both
+process-local); throttled calls get `X-Refresh-Ignored: throttled`. `/health/errors`
+(redacted) and quota figures require the same header; `/health` and `/status` stay public.
+
+The browser never receives `ADMIN_REFRESH_SECRET`. It hides protected refresh controls when the
+public capability is disabled and reports an ignored/throttled response instead of claiming a
+refresh succeeded. Populate player props from a trusted operator session by calling `/odds` with
+the admin header; never put the secret in frontend configuration or a browser bundle.
 
 There is no automated bet placement or sportsbook account integration.
 
@@ -109,6 +152,12 @@ There is no automated bet placement or sportsbook account integration.
 cd frontend
 npm install
 npm run dev
+npm test
+npm run test:browser
 ```
 
 The Vite development server proxies `/api` to `http://127.0.0.1:8000`.
+`npm run test:browser` starts credential-isolated fixture servers and runs the responsive Playwright
+smoke test in desktop and mobile viewports. It never reads the repository `.env`.
+The multi-stage Docker build still compiles this frontend and has FastAPI serve it from the same
+origin as `/api/v1`, but nothing deploys it: the app is local-only (see "Local matchup hub").

@@ -1,0 +1,20 @@
+{
+  "header": {"id": "401872964"},
+  "pickcenter": [{
+    "provider": {"id": "100", "name": "DraftKings"},
+    "spread": 2.5,
+    "overUnder": 38.5,
+    "pointSpread": {
+      "home": {"close": {"line": "+2.5", "odds": "+100"}, "open": {"line": "+2.5", "odds": "-110"}},
+      "away": {"close": {"line": "-2.5", "odds": "-120"}, "open": {"line": "-2.5", "odds": "-110"}}
+    },
+    "total": {
+      "over": {"close": {"line": "o38.5", "odds": "-105"}, "open": {"line": "o40.5", "odds": "-110"}},
+      "under": {"close": {"line": "u38.5", "odds": "-115"}, "open": {"line": "u40.5", "odds": "-110"}}
+    },
+    "moneyline": {
+      "home": {"close": {"odds": "+124"}, "open": {"odds": "+114"}},
+      "away": {"close": {"odds": "-148"}, "open": {"odds": "-135"}}
+    }
+  }]
+}

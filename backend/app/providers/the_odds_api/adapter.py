@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from app.domain.models import Event, EventComparison, MarketType, Offer, OfferStatus, Sport
+from app.identity import canonicalize_comparison
 from app.providers.errors import OddsProviderError
 from app.providers.the_odds_api.client import TheOddsApiClient, market_type_for_key, sport_key
 
@@ -37,6 +38,13 @@ class TheOddsApiProvider:
             payload = await self.client.fetch_odds(requested_sport)
             sport_comparisons = self._normalize_events(payload, requested_sport)
             if include_player_props:
+                if event_id is not None:
+                    # One upstream request per *requested* event, not per event in the sport.
+                    sport_comparisons = [
+                        c
+                        for c in sport_comparisons
+                        if event_id in (c.event.id, canonicalize_comparison(c).event.id)
+                    ]
                 sport_comparisons = await self._attach_player_props(
                     sport_comparisons, requested_sport
                 )
@@ -69,7 +77,7 @@ class TheOddsApiProvider:
                 if not raw_payload:
                     return comparison
                 prop_offers = self._normalize_offers(
-                    raw_payload, comparison.event.id, datetime.now(timezone.utc)
+                    raw_payload, comparison.event.id, _snapshot_time(comparison)
                 )
                 return EventComparison(
                     event=comparison.event, offers=[*comparison.offers, *prop_offers]
@@ -132,6 +140,12 @@ class TheOddsApiProvider:
                         )
                     )
         return offers
+
+
+def _snapshot_time(comparison: EventComparison) -> datetime:
+    # Props share the base offers' observed_at so a saved snapshot (newest observed_at per event)
+    # contains both, not just the later-stamped props.
+    return max((o.observed_at for o in comparison.offers), default=datetime.now(timezone.utc))
 
 
 def american_to_decimal(price: int) -> float:

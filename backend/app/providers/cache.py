@@ -67,6 +67,14 @@ class CachedOddsProvider:
         }
         return len(event_ids)
 
+    def cached_events(self, sport: Sport) -> list:
+        """Events already in memory for `sport`. Never fetches (no quota spend)."""
+        seen: dict = {}
+        for (key_sport, *_), (_, comparisons) in self._cache.items():
+            if key_sport == sport:
+                seen.update({c.event.id: c.event for c in comparisons})
+        return list(seen.values())
+
     async def get_comparisons(
         self,
         sport: Optional[Sport] = None,
@@ -75,26 +83,30 @@ class CachedOddsProvider:
         force_refresh: bool = False,
         include_player_props: bool = False,
     ) -> Sequence[EventComparison]:
-        cache_key = (sport, event_id, market_type, include_player_props)
+        # market_type never changes what is fetched upstream, and event_id only does for
+        # props. Keying on them for ordinary reads would let callers mint fresh cache
+        # entries (and so fresh paid fetches) just by varying query parameters.
+        cache_key = (sport, event_id if include_player_props else None, None, include_player_props)
+        upstream_event_id = event_id if include_player_props else None
         now = datetime.now(timezone.utc)
         cached = self._cache.get(cache_key)
         if not force_refresh and cached and now - cached[0] < self.ttl:
             self._cache_hit = True
-            return cached[1]
+            return scope_comparisons(list(cached[1]), event_id, market_type)
 
         async with self._lock:
             now = datetime.now(timezone.utc)
             cached = self._cache.get(cache_key)
             if not force_refresh and cached and now - cached[0] < self.ttl:
                 self._cache_hit = True
-                return cached[1]
+                return scope_comparisons(list(cached[1]), event_id, market_type)
 
             self._cache_hit = False
             if self._cooldown_until is not None and now < self._cooldown_until:
                 # Backing off after a 429: don't spend more upstream calls.
                 self._last_error_type = ProviderRateLimitError.error_type
                 if cached:
-                    return cached[1]
+                    return scope_comparisons(list(cached[1]), event_id, market_type)
                 raise self._cooldown_error or ProviderRateLimitError("Provider rate limited")
             quota_remaining = getattr(self.provider, "quota_remaining", None)
             if quota_remaining is not None and quota_remaining <= self.min_quota_remaining:
@@ -104,31 +116,30 @@ class CachedOddsProvider:
                 )
                 self._last_error_type = quota_error.error_type
                 if cached:
-                    return cached[1]
+                    return scope_comparisons(list(cached[1]), event_id, market_type)
                 raise quota_error
             try:
                 comparisons = [
                     canonicalize_comparison(comparison)
                     for comparison in await self.provider.get_comparisons(
                         sport=sport,
-                        event_id=event_id,
-                        market_type=market_type,
+                        event_id=upstream_event_id,
+                        market_type=None,
                         force_refresh=force_refresh,
                         include_player_props=include_player_props,
                     )
                 ]
-                comparisons = scope_comparisons(comparisons, event_id, market_type)
             except Exception as error:
                 if isinstance(error, ProviderRateLimitError):
                     self._cooldown_until = now + self.rate_limit_cooldown
                     self._cooldown_error = error
                 self._last_error_type = getattr(error, "error_type", type(error).__name__)
                 if cached:
-                    return cached[1]
+                    return scope_comparisons(list(cached[1]), event_id, market_type)
                 raise
 
             self._last_error_type = None
             self._cooldown_until = None
             self._last_refreshed_at = now
             self._cache[cache_key] = (now, comparisons)
-            return comparisons
+            return scope_comparisons(comparisons, event_id, market_type)

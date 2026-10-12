@@ -162,3 +162,48 @@ def test_include_player_props_skips_event_on_per_event_error() -> None:
 
     assert client.requested_prop_event_ids == ["event-nfl-1"]
     assert comparisons[0].offers  # main-market offers survive the props failure
+
+
+def _captured_params(**client_kwargs: Any) -> dict[str, str]:
+    import httpx
+    from app.providers.the_odds_api.client import TheOddsApiClient
+
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(request.url.params)
+        return httpx.Response(200, json=[], headers={"x-requests-remaining": "400"})
+
+    client = TheOddsApiClient("k", transport=httpx.MockTransport(handler), **client_kwargs)
+    asyncio.run(client.fetch_odds(Sport.NFL))
+    return seen
+
+
+def test_client_defaults_to_us_region() -> None:
+    params = _captured_params()
+    assert params["regions"] == "us"
+    assert "bookmakers" not in params
+
+
+def test_bookmakers_allowlist_takes_precedence_over_regions() -> None:
+    params = _captured_params(regions="us,eu", bookmakers=("draftkings", "fanduel"))
+    assert params["bookmakers"] == "draftkings,fanduel"
+    assert "regions" not in params  # sending both would bill both
+
+
+def test_settings_parse_and_validate_coverage(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.config import load_settings
+
+    monkeypatch.setenv("ODDS_BOOKMAKERS", " DraftKings, fanduel ,draftkings")
+    monkeypatch.setenv("ODDS_REGIONS", "us, eu")
+    s = load_settings()
+    assert s.odds_bookmakers == ("draftkings", "fanduel")
+    assert s.odds_regions == "us,eu"
+
+    monkeypatch.setenv("ODDS_BOOKMAKERS", "draft kings!")
+    with pytest.raises(ValueError, match="ODDS_BOOKMAKERS"):
+        load_settings()
+    monkeypatch.setenv("ODDS_BOOKMAKERS", "")
+    monkeypatch.setenv("ODDS_REGIONS", "mars")
+    with pytest.raises(ValueError, match="ODDS_REGIONS"):
+        load_settings()

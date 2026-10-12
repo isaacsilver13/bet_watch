@@ -73,6 +73,9 @@ def test_status_reports_unconfigured_provider_without_fetching_odds(monkeypatch)
         "data_stale": False,
         "generated_at": None,
         "event_count": 0,
+        "coverage": {"regions": "us", "bookmakers": []},
+        "capabilities": {"public_expensive_refresh": True},
+        "prediction_markets": {"kalshi_enabled": False},
     }
 
 
@@ -139,6 +142,16 @@ def test_settings_load_provider_controls(monkeypatch) -> None:
     assert settings.provider_mode is ProviderMode.LIVE
     assert settings.cache_ttl_seconds == 120
     assert settings.provider_min_quota_remaining == 7
+
+
+def test_settings_loads_validated_kalshi_base_url(monkeypatch) -> None:
+    monkeypatch.setenv("KALSHI_BASE_URL", "https://example.test/trade-api/v2/")
+
+    assert load_settings().kalshi_base_url == "https://example.test/trade-api/v2"
+
+    monkeypatch.setenv("KALSHI_BASE_URL", "http://example.test/trade-api/v2")
+    with pytest.raises(ValueError, match="HTTPS URL"):
+        load_settings()
 
 
 def test_settings_load_dotenv_for_local_live_configuration(monkeypatch, tmp_path) -> None:
@@ -279,10 +292,8 @@ def test_health_metrics_reports_provider_state(monkeypatch) -> None:
     assert "quota_remaining" in payload
 
 
-def test_health_errors_returns_a_list(monkeypatch) -> None:
-    response = client.get("/api/v1/health/errors")
-    assert response.status_code == 200
-    assert isinstance(response.json()["errors"], list)
+def test_health_errors_is_closed_without_admin_secret() -> None:
+    assert client.get("/api/v1/health/errors").status_code == 403
 
 
 def test_provider_selection_uses_the_odds_api_key(monkeypatch) -> None:
@@ -332,16 +343,6 @@ def test_odds_route_reports_error_when_provider_fails_and_nothing_was_saved(
     assert body["events"] == []
     assert body["provider_status"]["failing"] == "error"
     assert body["provider_details"]["failing"]["stale"] is False
-
-
-def test_logged_errors_show_up_in_health_errors() -> None:
-    import logging
-
-    logging.getLogger("app.api.routes").error("odds fetch failed error_type=test")
-
-    errors = client.get("/api/v1/health/errors").json()["errors"]
-
-    assert any("odds fetch failed error_type=test" in entry["message"] for entry in errors)
 
 
 class RecordingProvider(FailingProvider):

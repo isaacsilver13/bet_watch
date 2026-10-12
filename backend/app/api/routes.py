@@ -1,9 +1,10 @@
+import hmac
 import logging
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from app.config import ProviderMode, Settings, load_settings
 from app.domain.models import (
@@ -11,6 +12,7 @@ from app.domain.models import (
     EventComparison,
     HistoryResponse,
     MarketType,
+    PredictionMarketsResponse,
     ProviderDetails,
     Sport,
 )
@@ -20,11 +22,14 @@ from app.providers.base import OddsProvider
 from app.providers.cache import CachedOddsProvider
 from app.providers.errors import OddsProviderError
 from app.providers.fixture import FixtureOddsProvider
+from app.providers.kalshi.adapter import KalshiFixtureClient, KalshiProvider
+from app.providers.kalshi.client import KalshiClient
 from app.providers.stub import EmptyOddsProvider
 from app.providers.the_odds_api import TheOddsApiProvider
 from app.providers.the_odds_api.client import TheOddsApiClient
 from app.storage.database import create_engine, create_session_factory
 from app.storage.repository import OddsRepository
+from app.throttle import SlidingWindowLimiter
 
 router = APIRouter(prefix="/api/v1")
 logger = logging.getLogger(__name__)
@@ -39,6 +44,8 @@ def build_provider(settings: Optional[Settings] = None) -> OddsProvider:
             TheOddsApiClient(
                 active_settings.the_odds_api_key,
                 timeout=active_settings.provider_timeout_seconds,
+                regions=active_settings.odds_regions,
+                bookmakers=active_settings.odds_bookmakers,
             )
         )
     if active_settings.odds_provider == "fixture":
@@ -55,7 +62,24 @@ def build_provider(settings: Optional[Settings] = None) -> OddsProvider:
     return EmptyOddsProvider()
 
 
+def build_kalshi(settings: Settings) -> Optional[KalshiProvider]:
+    if not settings.kalshi_enabled:
+        return None
+    client = (
+        KalshiClient(
+            timeout=settings.provider_timeout_seconds,
+            max_retries=settings.provider_max_retries,
+            backoff_seconds=settings.provider_backoff_seconds,
+            base_url=settings.kalshi_base_url,
+        )
+        if settings.provider_mode is ProviderMode.LIVE
+        else KalshiFixtureClient()
+    )
+    return KalshiProvider(client, ttl_seconds=settings.kalshi_cache_ttl_seconds)
+
+
 settings = load_settings()
+kalshi = build_kalshi(settings)
 provider: OddsProvider = CachedOddsProvider(
     build_provider(settings),
     ttl_seconds=settings.cache_ttl_seconds,
@@ -64,6 +88,44 @@ provider: OddsProvider = CachedOddsProvider(
 repository = None
 if settings.persistence_enabled:
     repository = OddsRepository(create_session_factory(create_engine(settings)))
+
+
+# Expensive refreshes (force_refresh / include_props) are admin-only and rate limited.
+# Per client: a short burst guard. Global: a hard budget per window, independent of cache state.
+_client_limiters: dict[str, SlidingWindowLimiter] = {}
+_CLIENT_LIMIT = 2
+_CLIENT_WINDOW_SECONDS = 600
+_budget = SlidingWindowLimiter(
+    settings.admin_refresh_budget, settings.admin_refresh_budget_window_seconds
+)
+
+
+def _is_admin(request: Request) -> bool:
+    """True when the request carries the admin secret (constant-time compare).
+
+    With no secret configured only fixture mode (which never spends) is treated as admin so
+    local development keeps working; live mode fails closed.
+    """
+    secret = settings.admin_refresh_secret
+    if not secret:
+        return settings.provider_mode is ProviderMode.FIXTURE
+    supplied = request.headers.get("x-admin-token")
+    return bool(supplied) and hmac.compare_digest(supplied.encode(), secret.encode())
+
+
+def _client_key(request: Request) -> str:
+    fallback = request.client.host if request.client else "unknown"
+    return request.headers.get("fly-client-ip") or fallback
+
+
+def _allow_expensive_refresh(request: Request) -> bool:
+    """Per-client + global throttle. Only meaningful (and enforced) when live calls can spend."""
+    if settings.provider_mode is not ProviderMode.LIVE:
+        return True
+    limiter = _client_limiters.setdefault(
+        _client_key(request), SlidingWindowLimiter(_CLIENT_LIMIT, _CLIENT_WINDOW_SECONDS)
+    )
+    return limiter.allow() and _budget.allow()
 
 
 @router.get("/health")
@@ -81,27 +143,54 @@ async def status() -> dict[str, object]:
         "data_stale": provider_status == "stale",
         "generated_at": getattr(provider, "last_refreshed_at", None),
         "event_count": getattr(provider, "cached_event_count", 0),
+        "coverage": {
+            "regions": settings.odds_regions,
+            "bookmakers": list(settings.odds_bookmakers),
+        },
+        "capabilities": {
+            # A browser must never receive ADMIN_REFRESH_SECRET. Fixture mode is the only
+            # environment where anonymous expensive requests are safe and intentionally allowed.
+            "public_expensive_refresh": (
+                settings.provider_mode is ProviderMode.FIXTURE
+                and not settings.admin_refresh_secret
+            ),
+        },
+        "prediction_markets": {
+            "kalshi_enabled": kalshi is not None,
+        },
     }
 
 
 @router.get("/health/metrics")
-async def health_metrics() -> dict[str, object]:
-    return {
+async def health_metrics(request: Request) -> dict[str, object]:
+    metrics: dict[str, object] = {
         "last_activity_at": getattr(provider, "last_refreshed_at", None),
         "data_freshness_at": getattr(provider, "last_refreshed_at", None),
         "event_count": getattr(provider, "cached_event_count", 0),
         "cache_hit": getattr(provider, "cache_hit", False),
-        "quota_remaining": getattr(provider, "quota_remaining", None),
     }
+    if _is_admin(request):  # provider quota is operational data, not for anonymous callers
+        metrics["quota_remaining"] = getattr(provider, "quota_remaining", None)
+        if kalshi is not None:
+            metrics["kalshi"] = {
+                sport.value: kalshi.metrics(sport) for sport in (Sport.NFL, Sport.NBA)
+            }
+    return metrics
 
 
 @router.get("/health/errors")
-async def health_errors() -> dict[str, object]:
+async def health_errors(request: Request) -> dict[str, object]:
+    # Fail closed: needs the admin secret even in fixture mode when one is configured, and is
+    # unreachable in live mode without one.
+    if not (settings.admin_refresh_secret and _is_admin(request)):
+        raise HTTPException(status_code=403, detail="Forbidden")
     return {"errors": recent_errors()}
 
 
 @router.get("/odds", response_model=ComparisonResponse)
 async def get_odds(
+    request: Request,
+    response: Response,
     sport: Optional[Sport] = Query(default=None),
     event_id: Optional[str] = Query(default=None, min_length=1),
     market_type: Optional[MarketType] = Query(default=None),
@@ -116,6 +205,26 @@ async def get_odds(
     ),
 ) -> ComparisonResponse:
     started_at = datetime.now(timezone.utc)
+    is_admin = _is_admin(request)
+    if force_refresh or include_props:
+        if not is_admin:
+            reason = "unauthorized"
+        elif not _allow_expensive_refresh(request):
+            reason = "throttled"
+        else:
+            reason = None
+            logger.warning(
+                "admin expensive refresh sport=%s force_refresh=%s include_props=%s client=%s",
+                sport.value if sport else "all",
+                force_refresh,
+                include_props,
+                _client_key(request),
+            )
+        if reason is not None:
+            # Serve the cached/saved snapshot instead of spending provider quota.
+            force_refresh = include_props = False
+            response.headers["X-Refresh-Ignored"] = reason
+    quota_remaining = getattr(provider, "quota_remaining", None) if is_admin else None
     if not force_refresh and not include_props and repository is not None and sport is not None:
         # Daily gate: the in-memory cache dies whenever Fly stops the machine, so
         # the last successful refresh recorded in the database is what actually
@@ -141,7 +250,7 @@ async def get_odds(
                                 status="configured",
                                 cache_hit=True,
                                 last_refreshed_at=last_success,
-                                quota_remaining=getattr(provider, "quota_remaining", None),
+                                quota_remaining=quota_remaining,
                             )
                         },
                         events=scope_comparisons(
@@ -214,7 +323,7 @@ async def get_odds(
                     if provider_error
                     else getattr(provider, "last_error_type", None)
                 ),
-                quota_remaining=getattr(provider, "quota_remaining", None),
+                quota_remaining=quota_remaining,
             )
         },
         events=list(comparisons),
@@ -256,6 +365,64 @@ def _log_fetch(
             fields,
             error,
         )
+
+
+@router.get("/prediction-markets", response_model=PredictionMarketsResponse)
+async def get_prediction_markets(sport: Sport = Query()) -> PredictionMarketsResponse:
+    """Read-only prediction-market contracts. Kept off /odds so they can never enter the
+    sportsbook grid or its best-price logic; a Kalshi failure cannot affect /odds."""
+    now = datetime.now(timezone.utc)
+    if kalshi is None:
+        return PredictionMarketsResponse(
+            generated_at=now,
+            provider_status={"kalshi": "disabled"},
+            contract_counts={
+                "total": 0,
+                "matched": 0,
+                "unmatched": 0,
+                "ambiguous": 0,
+                "rejected": 0,
+            },
+        )
+    # Match against sportsbook events we already hold; never trigger a paid fetch here.
+    events = getattr(provider, "cached_events", lambda _sport: [])(sport)
+    if not events and repository is not None:
+        events = [c.event for c in await repository.latest_comparisons(provider.name, sport)]
+    try:
+        contracts = await kalshi.get_contracts(sport, events)
+    except Exception as error:  # prediction data is optional; never fail the request over it
+        logger.error("kalshi fetch failed type=%s detail=%s", kalshi.last_error_type(sport), error)
+        contracts = []
+    status = kalshi.status(sport)
+    counts = kalshi.contract_counts(sport)
+    logger.info(
+        "prediction fetch source=kalshi sport=%s status=%s cache_hit=%s "
+        "contracts=%d matched=%d unmatched=%d ambiguous=%d rejected=%d",
+        sport.value,
+        status,
+        kalshi.cache_hit_for(sport),
+        counts["total"],
+        counts["matched"],
+        counts["unmatched"],
+        counts["ambiguous"],
+        counts["rejected"],
+    )
+    return PredictionMarketsResponse(
+        generated_at=now,
+        provider_status={kalshi.name: status},
+        provider_details={
+            kalshi.name: ProviderDetails(
+                status=status,
+                cache_hit=kalshi.cache_hit_for(sport),
+                stale=status == "stale",
+                last_refreshed_at=kalshi.last_refreshed_at(sport),
+                error_type=kalshi.last_error_type(sport),
+                cache_age_seconds=kalshi.cache_age_seconds(sport),
+            )
+        },
+        contract_counts=counts,
+        contracts=contracts,
+    )
 
 
 @router.get("/history", response_model=HistoryResponse)

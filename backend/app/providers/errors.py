@@ -28,5 +28,11 @@ class ProviderPayloadError(OddsProviderError):
     error_type = "invalid_payload"
 
 
+class ProviderIncompleteResponseError(ProviderPayloadError):
+    """The provider returned a valid-looking but provably incomplete data set."""
+
+    error_type = "incomplete_response"
+
+
 class ProviderRequestRejectedError(ProviderUpstreamError):
     """The provider answered with a 4xx other than auth/rate-limit (bad request)."""
