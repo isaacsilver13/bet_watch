@@ -1,0 +1,33 @@
+abbr,name,espn_id,conference,venue_espn_id,venue_name,lat,lon,tz,roof,aliases
+ARI,Arizona Cardinals,22,NFC West,3970,State Farm Stadium,33.5276,-112.2626,America/Phoenix,retractable,
+ATL,Atlanta Falcons,1,NFC South,5348,Mercedes-Benz Stadium,33.7554,-84.4008,America/New_York,retractable,
+BAL,Baltimore Ravens,33,AFC North,3814,M&T Bank Stadium,39.2780,-76.6227,America/New_York,outdoors,
+BUF,Buffalo Bills,2,AFC East,11938,Highmark Stadium,42.7738,-78.7870,America/New_York,outdoors,
+CAR,Carolina Panthers,29,NFC South,3628,Bank of America Stadium,35.2258,-80.8528,America/New_York,outdoors,
+CHI,Chicago Bears,3,NFC North,3933,Soldier Field,41.8623,-87.6167,America/Chicago,outdoors,
+CIN,Cincinnati Bengals,4,AFC North,3874,Paycor Stadium,39.0955,-84.5161,America/New_York,outdoors,
+CLE,Cleveland Browns,5,AFC North,3679,Huntington Bank Field,41.5061,-81.6995,America/New_York,outdoors,
+DAL,Dallas Cowboys,6,NFC East,3687,AT&T Stadium,32.7473,-97.0945,America/Chicago,retractable,
+DEN,Denver Broncos,7,AFC West,3937,Empower Field at Mile High,39.7439,-105.0201,America/Denver,outdoors,
+DET,Detroit Lions,8,NFC North,3727,Ford Field,42.3400,-83.0456,America/Detroit,dome,
+GB,Green Bay Packers,9,NFC North,3798,Lambeau Field,44.5013,-88.0622,America/Chicago,outdoors,
+HOU,Houston Texans,34,AFC South,3891,NRG Stadium,29.6847,-95.4107,America/Chicago,retractable,
+IND,Indianapolis Colts,11,AFC South,3812,Lucas Oil Stadium,39.7601,-86.1639,America/Indiana/Indianapolis,retractable,
+JAX,Jacksonville Jaguars,30,AFC South,3712,EverBank Stadium,30.3239,-81.6373,America/New_York,outdoors,
+KC,Kansas City Chiefs,12,AFC West,3622,Arrowhead Stadium,39.0489,-94.4839,America/Chicago,outdoors,
+LAC,Los Angeles Chargers,24,AFC West,7065,SoFi Stadium,33.9535,-118.3392,America/Los_Angeles,dome,SD|San Diego Chargers
+LAR,Los Angeles Rams,14,NFC West,7065,SoFi Stadium,33.9535,-118.3392,America/Los_Angeles,dome,LA|STL|St. Louis Rams
+LV,Las Vegas Raiders,13,AFC West,6501,Allegiant Stadium,36.0909,-115.1833,America/Los_Angeles,dome,OAK|LVR|Oakland Raiders
+MIA,Miami Dolphins,15,AFC East,3948,Hard Rock Stadium,25.9580,-80.2389,America/New_York,outdoors,
+MIN,Minnesota Vikings,16,NFC North,5239,U.S. Bank Stadium,44.9737,-93.2575,America/Chicago,dome,
+NE,New England Patriots,17,AFC East,3738,Gillette Stadium,42.0909,-71.2643,America/New_York,outdoors,
+NO,New Orleans Saints,18,NFC South,3493,Caesars Superdome,29.9511,-90.0812,America/Chicago,dome,
+NYG,New York Giants,19,NFC East,3839,MetLife Stadium,40.8135,-74.0745,America/New_York,outdoors,
+NYJ,New York Jets,20,AFC East,3839,MetLife Stadium,40.8135,-74.0745,America/New_York,outdoors,
+PHI,Philadelphia Eagles,21,NFC East,3806,Lincoln Financial Field,39.9008,-75.1675,America/New_York,outdoors,
+PIT,Pittsburgh Steelers,23,AFC North,3752,Acrisure Stadium,40.4468,-80.0158,America/New_York,outdoors,
+SEA,Seattle Seahawks,26,NFC West,3673,Lumen Field,47.5952,-122.3316,America/Los_Angeles,outdoors,
+SF,San Francisco 49ers,25,NFC West,4738,Levi's Stadium,37.4030,-121.9700,America/Los_Angeles,outdoors,
+TB,Tampa Bay Buccaneers,27,NFC South,3886,Raymond James Stadium,27.9759,-82.5033,America/New_York,outdoors,
+TEN,Tennessee Titans,10,AFC South,3810,Nissan Stadium,36.1665,-86.7713,America/Chicago,outdoors,
+WSH,Washington Commanders,28,NFC East,3719,Northwest Stadium,38.9077,-76.8645,America/New_York,outdoors,WAS|Washington|Washington Football Team|Washington Redskins
