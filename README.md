@@ -30,8 +30,8 @@ Standalone NFL and NBA odds comparison app.
 
 ## Local matchup hub
 
-This app is **local-only**: it runs on your PC against docker-compose Postgres and will hold a
-personal bet log. CI no longer deploys; the existing Fly app is left as it is until the owner
+This app is **local-only**: it runs on your PC against docker-compose Postgres and will hold
+private data. CI no longer deploys; the existing Fly app is left as it is until the owner
 decides what to do with it. Analysis here is statistically honest context, not betting advice.
 
 1. `docker compose up -d postgres`
