@@ -37,4 +37,6 @@ class GameRecord:
     venue_espn_id: Optional[str] = None
     venue_name: Optional[str] = None
     venue_indoor: Optional[bool] = None
+    home_qb: Optional[str] = None  # nflverse starter, once the game is played
+    away_qb: Optional[str] = None
     lines: tuple[LineRecord, ...] = ()

@@ -125,6 +125,10 @@ class GamesRepository:
                     game.home_score = record.home_score
                 if record.away_score is not None:
                     game.away_score = record.away_score
+                if record.home_qb:
+                    game.home_qb = record.home_qb
+                if record.away_qb:
+                    game.away_qb = record.away_qb
                 game.updated_at = captured_at
                 await session.flush()
                 for line in record.lines:

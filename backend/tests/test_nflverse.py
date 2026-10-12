@@ -69,3 +69,10 @@ def test_rows_without_espn_id_or_before_min_season_are_skipped() -> None:
 def test_missing_gametime_defaults_to_1pm_eastern() -> None:
     [game] = parse_games_csv(_csv(_row(gametime="")))
     assert game.start_time == datetime(2025, 9, 7, 17, 0, tzinfo=timezone.utc)
+
+
+def test_starting_quarterbacks_are_kept_when_present() -> None:
+    [game] = parse_games_csv(_csv(_row(home_qb_name="Bo Nix", away_qb_name="Sam Darnold")))
+    assert (game.home_qb, game.away_qb) == ("Bo Nix", "Sam Darnold")
+    [blank] = parse_games_csv(_csv(_row()))
+    assert (blank.home_qb, blank.away_qb) == (None, None)
