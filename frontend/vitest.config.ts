@@ -6,5 +6,6 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
+    exclude: ["node_modules/**", "tests/browser/**"],  // Playwright specs run via test:browser
   },
 });

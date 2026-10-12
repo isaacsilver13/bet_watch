@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("fixture board exposes the comparison table and matched Kalshi contract", async ({ page }) => {
-  await page.goto("/?sport=nfl&market=moneyline");
+  await page.goto("/odds?sport=nfl&market=moneyline");
 
   await expect(page.getByRole("heading", { name: "Lineup" })).toBeVisible();
   await expect(page.getByRole("button", { name: "NFL" })).toHaveClass(/active/);
