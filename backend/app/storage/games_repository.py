@@ -42,7 +42,7 @@ class LinkResult:
     unlinked: list[str] = field(default_factory=list)
 
 
-async def _alias_map(session: AsyncSession, sport: str) -> dict[str, int]:
+async def alias_map(session: AsyncSession, sport: str) -> dict[str, int]:
     rows = await session.execute(
         select(TeamAlias.alias, TeamAlias.team_id).where(TeamAlias.sport == sport)
     )
@@ -76,7 +76,7 @@ class GamesRepository:
     ) -> UpsertResult:
         result = UpsertResult()
         async with self.session_factory() as session, session.begin():
-            aliases = await _alias_map(session, sport)
+            aliases = await alias_map(session, sport)
             home_venues = dict(
                 (await session.execute(select(Team.id, Team.venue_id).where(Team.sport == sport)))
                 .all()
@@ -194,7 +194,7 @@ class GamesRepository:
     ) -> LinkResult:
         result = LinkResult()
         async with self.session_factory() as session, session.begin():
-            aliases = await _alias_map(session, sport)
+            aliases = await alias_map(session, sport)
             linked = select(Game.event_id).where(Game.event_id.is_not(None))
             events = (
                 await session.scalars(
