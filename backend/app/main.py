@@ -10,6 +10,7 @@ from app import error_log
 from app.api.bets import router as bets_router
 from app.api.lines import router as lines_router
 from app.api.matchup import router as matchup_router
+from app.api.ops import router as ops_router
 from app.api.routes import router
 from app.api.slate import router as slate_router
 
@@ -32,6 +33,7 @@ app.include_router(slate_router)
 app.include_router(matchup_router)
 app.include_router(lines_router)
 app.include_router(bets_router)
+app.include_router(ops_router)
 
 # Serves the built frontend from the same app/port as the API, so the two no
 # longer need separate Fly apps. No-op locally, where this directory doesn't
