@@ -86,3 +86,26 @@ def test_the_paid_client_only_exists_in_live_mode_with_a_key() -> None:
     assert client is not None and client.coverage == {"bookmakers": "fanduel"}
     assert TheOddsApiClient.from_settings(replace(live, the_odds_api_key=None)) is None
     assert TheOddsApiClient.from_settings(replace(live, provider_mode=ProviderMode.FIXTURE)) is None
+
+
+def test_a_snapshot_taken_in_the_same_second_by_another_sport_is_still_stored(tmp_path) -> None:
+    """NFL and NBA snapshots in one run-due pass can share a timestamp; each must be kept."""
+
+    async def scenario() -> None:
+        repo = OddsRepository(await new_session_factory(tmp_path))
+        nfl = TheOddsApiProvider.normalize_events(json.loads(BODY), Sport.NFL, NOW)
+        nba_payload = json.loads(BODY)
+        nba_payload[0]["id"] = "other-sport-event"
+        nba = TheOddsApiProvider.normalize_events(nba_payload, Sport.NBA, NOW)
+        assert await repo.record_snapshot("the_odds_api", Sport.NFL, nfl, NOW, 450) is True
+        assert await repo.record_snapshot("the_odds_api", Sport.NBA, nba, NOW, 447) is True
+        assert await repo.count_observations() == 60
+        assert await repo.record_snapshot("the_odds_api", Sport.NBA, nba, NOW, 447) is False
+        later = NOW + timedelta(minutes=5)
+        nba_later = TheOddsApiProvider.normalize_events(nba_payload, Sport.NBA, later)
+        await repo.record_snapshot("the_odds_api", Sport.NBA, nba_later, later, 444)
+        assert aware(await repo.latest_snapshot_at("the_odds_api", Sport.NFL)) == NOW
+        assert aware(await repo.latest_snapshot_at("the_odds_api", Sport.NBA)) == later
+        assert aware(await repo.latest_snapshot_at("the_odds_api")) == later
+
+    asyncio.run(scenario())

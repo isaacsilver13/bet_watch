@@ -1,0 +1,272 @@
+[
+  {
+    "id": "odds-ny-gs",
+    "sport_key": "basketball_nba",
+    "sport_title": "NBA",
+    "commence_time": "2026-01-16T03:00:00Z",
+    "home_team": "Golden State Warriors",
+    "away_team": "New York Knicks",
+    "bookmakers": [
+      {
+        "key": "draftkings",
+        "title": "DraftKings",
+        "markets": [
+          {
+            "key": "h2h",
+            "last_update": "2026-01-15T16:00:00Z",
+            "outcomes": [
+              {
+                "name": "Golden State Warriors",
+                "price": -300
+              },
+              {
+                "name": "New York Knicks",
+                "price": 250
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "last_update": "2026-01-15T16:00:00Z",
+            "outcomes": [
+              {
+                "name": "Golden State Warriors",
+                "price": -108,
+                "point": -7.5
+              },
+              {
+                "name": "New York Knicks",
+                "price": -112,
+                "point": 7.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "last_update": "2026-01-15T16:00:00Z",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 228.5
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 228.5
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "last_update": "2026-01-15T16:00:00Z",
+            "outcomes": [
+              {
+                "name": "Golden State Warriors",
+                "price": -310
+              },
+              {
+                "name": "New York Knicks",
+                "price": 255
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "last_update": "2026-01-15T16:00:00Z",
+            "outcomes": [
+              {
+                "name": "Golden State Warriors",
+                "price": -110,
+                "point": -7.5
+              },
+              {
+                "name": "New York Knicks",
+                "price": -110,
+                "point": 7.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "last_update": "2026-01-15T16:00:00Z",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -112,
+                "point": 228.5
+              },
+              {
+                "name": "Under",
+                "price": -108,
+                "point": 228.5
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "key": "betmgm",
+        "title": "BetMGM",
+        "markets": [
+          {
+            "key": "h2h",
+            "last_update": "2026-01-15T16:00:00Z",
+            "outcomes": [
+              {
+                "name": "Golden State Warriors",
+                "price": -320
+              },
+              {
+                "name": "New York Knicks",
+                "price": 260
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "last_update": "2026-01-15T16:00:00Z",
+            "outcomes": [
+              {
+                "name": "Golden State Warriors",
+                "price": -110,
+                "point": -8.0
+              },
+              {
+                "name": "New York Knicks",
+                "price": -110,
+                "point": 8.0
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "last_update": "2026-01-15T16:00:00Z",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 229.0
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 229.0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "key": "betrivers",
+        "title": "BetRivers",
+        "markets": [
+          {
+            "key": "h2h",
+            "last_update": "2026-01-15T16:00:00Z",
+            "outcomes": [
+              {
+                "name": "Golden State Warriors",
+                "price": -295
+              },
+              {
+                "name": "New York Knicks",
+                "price": 245
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "last_update": "2026-01-15T16:00:00Z",
+            "outcomes": [
+              {
+                "name": "Golden State Warriors",
+                "price": -105,
+                "point": -7.5
+              },
+              {
+                "name": "New York Knicks",
+                "price": -115,
+                "point": 7.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "last_update": "2026-01-15T16:00:00Z",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -105,
+                "point": 228.5
+              },
+              {
+                "name": "Under",
+                "price": -115,
+                "point": 228.5
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "key": "espnbet",
+        "title": "theScore Bet",
+        "markets": [
+          {
+            "key": "h2h",
+            "last_update": "2026-01-15T16:00:00Z",
+            "outcomes": [
+              {
+                "name": "Golden State Warriors",
+                "price": -300
+              },
+              {
+                "name": "New York Knicks",
+                "price": 250
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "last_update": "2026-01-15T16:00:00Z",
+            "outcomes": [
+              {
+                "name": "Golden State Warriors",
+                "price": -110,
+                "point": -7.5
+              },
+              {
+                "name": "New York Knicks",
+                "price": -110,
+                "point": 7.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "last_update": "2026-01-15T16:00:00Z",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 228.5
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 228.5
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

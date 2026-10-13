@@ -9,6 +9,7 @@ from app.api import routes
 from app.api.lines import Runtime, get_runtime
 from app.api.slate import get_now, get_session_factory
 from app.config import ProviderMode
+from app.domain.models import Sport
 from app.ingest.espn import parse_scoreboard
 from app.ingest.odds_raw import write_raw
 from app.ingest.odds_snapshot import ingest_snapshot
@@ -64,7 +65,7 @@ def _client(tmp_path, snapshots=(), runtime=None, now=NOW, client=None) -> TestC
         )
         for taken, body in snapshots:
             path = write_raw(tmp_path / "raw", "the_odds_api", f"seed-{taken}", taken, body)
-            await ingest_snapshot(factory, path, (FIRST, FIRST + timedelta(days=7)), 450)
+            await ingest_snapshot(factory, path, (FIRST, FIRST + timedelta(days=7)), 450, Sport.NFL)
 
     asyncio.run(setup())
     factory = _factory(tmp_path)

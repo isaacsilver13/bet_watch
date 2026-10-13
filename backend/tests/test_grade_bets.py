@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from app.analytics.pricing import fair_american
 from app.domain.bets import BetIn, BetPatch
+from app.domain.models import Sport
 from app.ingest.espn import parse_scoreboard
 from app.ingest.odds_raw import write_raw
 from app.ingest.odds_snapshot import ingest_snapshot
@@ -55,7 +56,9 @@ def _bet(game_id, **changes):
 async def _snapshot(factory, raw_dir, taken):
     body = json.dumps(load_json("the_odds_api/nfl_week6.json"))
     path = write_raw(raw_dir, "the_odds_api", f"snapshot-{taken:%H%M}", taken, body)
-    await ingest_snapshot(factory, path, (KICKOFF, KICKOFF + timedelta(minutes=1)), 450)
+    await ingest_snapshot(
+        factory, path, (KICKOFF, KICKOFF + timedelta(minutes=1)), 450, Sport.NFL
+    )
 
 
 def test_final_games_settle_their_open_bets_exactly_once(tmp_path) -> None:
