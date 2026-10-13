@@ -3,6 +3,7 @@ from typing import Any, Optional
 
 import httpx
 
+from app.config import ProviderMode, Settings
 from app.domain.models import MarketType, Sport
 from app.providers.errors import (
     ProviderAuthError,
@@ -86,6 +87,20 @@ class TheOddsApiClient:
         self.transport = transport
         self.quota_remaining: Optional[int] = None
 
+    @classmethod
+    def from_settings(cls, settings: Settings) -> Optional["TheOddsApiClient"]:
+        """The paid client, only in live mode with a key; otherwise nothing can spend credits."""
+        if settings.provider_mode is not ProviderMode.LIVE or not settings.the_odds_api_key:
+            return None
+        return cls(
+            settings.the_odds_api_key,
+            timeout=settings.provider_timeout_seconds,
+            max_retries=settings.provider_max_retries,
+            backoff_seconds=settings.provider_backoff_seconds,
+            regions=settings.odds_regions,
+            bookmakers=settings.odds_bookmakers,
+        )
+
     async def fetch_odds(self, sport: Sport) -> list[dict[str, Any]]:
         sport_name = sport.value.upper()  # Convert Sport enum to string like "NFL", "NBA"
         markets = SPORT_MARKETS.get(sport_name, CORE_MARKETS)
@@ -126,7 +141,23 @@ class TheOddsApiClient:
             raise ProviderPayloadError("The Odds API returned a non-object payload for event odds")
         return payload
 
+    async def fetch_odds_raw(self, sport: Sport) -> str:
+        """The bulk odds response body, unparsed, so a paid call can be saved before it is read."""
+        response = await self._get(
+            f"/sports/{sport_key(sport)}/odds",
+            {
+                "apiKey": self.api_key,
+                **self.coverage,
+                "markets": ",".join(SPORT_MARKETS.get(sport.value.upper(), CORE_MARKETS)),
+                "oddsFormat": "american",
+            },
+        )
+        return response.text
+
     async def _get_json(self, path: str, params: dict[str, str]) -> Any:
+        return (await self._get(path, params)).json()
+
+    async def _get(self, path: str, params: dict[str, str]) -> httpx.Response:
         for attempt in range(self.max_retries + 1):
             try:
                 async with httpx.AsyncClient(
@@ -152,7 +183,7 @@ class TheOddsApiClient:
                             f"The Odds API rejected the request with status "
                             f"{response.status_code}: {response.text[:300]}"
                         )
-                    return response.json()
+                    return response
             except (
                 ProviderAuthError,
                 ProviderRateLimitError,
