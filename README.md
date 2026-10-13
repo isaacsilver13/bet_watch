@@ -75,6 +75,28 @@ call on demand (at most one per 10 minutes; it only shows for requests from this
 for CLV; ESPN's close is the fallback. `grade_bets` runs hourly: it settles bets on final games
 and copies the closing line onto bets whose game has started. Context, not betting advice.
 
+### NBA
+
+The NBA lives next to the NFL: `/nba` is a day-by-day slate (with previous and next game day), and
+each matchup page has Lines, Records, Ratings, Schedule, Injuries and Head-to-head. Ratings are
+season-to-date offensive, defensive and net rating, pace and the four factors with league ranks;
+Schedule counts back-to-backs, third games in four days, fourth in six, and travel. Everything is
+computed only from games before tip-off, and ATS and O/U use ESPN's closing line (DraftKings).
+
+1. `python -m app.jobs seed` seeds the NBA teams along with the NFL's.
+2. `python -m app.jobs nba_history` loads the season so far: ESPN day by day, then each finished
+   game's closing line. It takes a few minutes and is free (no key).
+3. `run-due` then keeps it current: `nba_scoreboard` (hourly), `nba_closes` (daily),
+   `nba_team_stats` (daily, from stats.nba.com), `nba_injuries` (10:00, 16:00 and 22:00 Central) and
+   `nba_link_events`.
+
+NBA prices use the same Odds API key and the same credit pool. With `PROVIDER_MODE=live`,
+`odds_snapshot_nba` takes a snapshot at 10am Central every day and shortly before the first and
+the last tip of each night (one call, 3 credits, covers every game), so about 9 credits a day.
+Games that tip between those two get ESPN's close for CLV instead of a multi-book consensus. In
+October through February, with the NFL's roughly 30 credits a week, the two sports use about 400 of
+the free 500 credits a month; `PROVIDER_MIN_QUOTA_REMAINING` still stops everything at the floor.
+
 ## Run locally
 
 ### Backend
