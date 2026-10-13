@@ -38,12 +38,22 @@ decides what to do with it. Analysis here is statistically honest context, not b
 2. `copy .env.example .env` (defaults: fixture odds, persistence on)
 3. `alembic upgrade head`
 4. `python -m app.jobs seed`, then `python -m app.jobs nfl_history`, then
-   `python -m app.jobs espn_scoreboard`, then `python -m app.jobs espn_closes`
+   `python -m app.jobs espn_scoreboard`, then `python -m app.jobs espn_closes`, then (once)
+   `python -m app.jobs team_stats_history`, then `python -m app.jobs injuries` and
+   `python -m app.jobs weather`
 5. `uvicorn app.main:app --app-dir backend --reload --port 8000`, and `npm run dev` in `frontend/`
 6. Open `http://localhost:5173/nfl`. The odds board is at `/odds`.
 7. Optional: `powershell -ExecutionPolicy Bypass -File scripts/register_run_due_task.ps1` runs
    `python -m app.jobs run-due` every 15 minutes while the PC is on. Hours the PC was off are
    marked `missed` once and never retried.
+
+Click a game on the slate to open its matchup page (`/game/<id>`): records against the spread,
+season efficiency with league ranks, rest and travel, injuries (with a flag when last week's
+starting QB is on the report), weather, and head-to-head. Everything shown is computed only from
+what was known before kickoff, and each tab says when its data was last refreshed. This is
+context, not betting advice. Sources: nflverse team stats (daily), ESPN injuries (daily) and
+Open-Meteo forecasts (every 3 hours); all free, none need a key. The scheduled `run-due` picks
+up `team_stats`, `injuries` and `weather` on its own; `team_stats_history` is manual.
 
 ## Run locally
 

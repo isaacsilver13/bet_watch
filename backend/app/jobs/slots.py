@@ -16,14 +16,17 @@ class Slot:
     window_end: datetime
 
 
-def hourly_slots(job: str, now: datetime, first_hour: int = 8, last_hour: int = 23) -> list[Slot]:
+def hourly_slots(
+    job: str, now: datetime, first_hour: int = 8, last_hour: int = 23, step: int = 1
+) -> list[Slot]:
     day = now.astimezone(CENTRAL).date()
     slots = []
-    for hour in range(first_hour, last_hour + 1):
+    for hour in range(first_hour, last_hour + 1, step):
         start = datetime.combine(day, time(hour), CENTRAL)
         if start > now:
             break
-        slots.append(Slot(f"{job}:{day.isoformat()}T{hour:02d}", start, start + timedelta(hours=1)))
+        window = timedelta(hours=step)
+        slots.append(Slot(f"{job}:{day.isoformat()}T{hour:02d}", start, start + window))
     return slots
 
 

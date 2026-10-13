@@ -10,9 +10,12 @@ from typing import Optional
 import httpx
 
 from app.config import load_settings
-from app.jobs.nfl import JOBS
+from app.jobs.context import CONTEXT_JOBS
+from app.jobs.nfl import JOBS as NFL_JOBS
 from app.jobs.runner import JobContext, run_due, run_once
 from app.storage.database import create_engine, create_session_factory
+
+JOBS = [*NFL_JOBS, *CONTEXT_JOBS]
 
 
 async def main(argv: Optional[list[str]] = None) -> int:

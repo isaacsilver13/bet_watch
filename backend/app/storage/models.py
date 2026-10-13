@@ -150,6 +150,8 @@ class Game(Base):
     status: Mapped[str] = mapped_column(String(30), nullable=False)
     home_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     away_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    home_qb: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)  # nflverse starter
+    away_qb: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     espn_id: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
     event_id: Mapped[Optional[str]] = mapped_column(ForeignKey("events.id"), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -188,3 +190,45 @@ class JobSlot(Base):
     coverage: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     raw_path: Mapped[Optional[str]] = mapped_column(String(400), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class TeamGameStat(Base):
+    __tablename__ = "team_game_stats"
+    __table_args__ = (UniqueConstraint("game_id", "team_id", name="uq_team_game_stats_game_team"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), nullable=False)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
+    stats: Mapped[dict] = mapped_column(JSON, nullable=False)  # curated nflverse columns
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class Injury(Base):
+    """One row per reportable player per snapshot; a snapshot is every row sharing observed_at."""
+
+    __tablename__ = "injuries"
+    __table_args__ = (Index("ix_injuries_observed_team", "observed_at", "team_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
+    player: Mapped[str] = mapped_column(String(160), nullable=False)
+    position: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    detail: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    reported_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class Weather(Base):
+    """Latest forecast for the kickoff hour; one row per outdoor game."""
+
+    __tablename__ = "weather"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), unique=True, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    temp_f: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    wind_mph: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    precip_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    conditions: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)

@@ -68,6 +68,8 @@ def parse_games_csv(text: str, min_season: int = 2015) -> list[GameRecord]:
                 away_score=away_score,
                 neutral=row["location"] == "Neutral",
                 venue_name=row.get("stadium") or None,
+                home_qb=None if _blank(row.get("home_qb_name")) else row["home_qb_name"].strip(),
+                away_qb=None if _blank(row.get("away_qb_name")) else row["away_qb_name"].strip(),
                 lines=(close,) if final and not close.is_empty() else (),
             )
         )

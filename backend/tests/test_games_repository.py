@@ -159,3 +159,19 @@ def test_link_events_matches_by_alias_and_date_including_swapped_sides(tmp_path)
         assert (await repo.link_events("nfl")).linked == 0  # already linked, nothing new
 
     asyncio.run(scenario())
+
+
+def test_quarterbacks_are_stored_and_a_later_espn_upsert_does_not_blank_them(tmp_path) -> None:
+    async def scenario() -> None:
+        factory, repo = await _seeded(tmp_path)
+        await repo.upsert_games("nfl", "espn", _records(), NOW)
+        den = next(r for r in _records() if r.espn_id == "401872995")
+        await repo.upsert_games(
+            "nfl", "nflverse", [replace(den, home_qb="Bo Nix", away_qb="Sam Darnold")], NOW
+        )
+        await repo.upsert_games("nfl", "espn", _records(), NOW + timedelta(hours=1))
+        async with factory() as session:
+            game = await session.scalar(select(Game).where(Game.espn_id == "401872995"))
+        assert (game.home_qb, game.away_qb) == ("Bo Nix", "Sam Darnold")
+
+    asyncio.run(scenario())
