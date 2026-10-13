@@ -240,3 +240,21 @@ footer { gap: 20px; padding-top: 20px; }
 .injury-list { margin: 0; padding-left: 18px; }
 .injury-list li { margin: 4px 0; }
 select { min-height: 39px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--surface-solid); padding: 8px 11px; }
+
+.lines-table td { min-width: 150px; }
+.price-button { display: block; width: 100%; margin: 2px 0; border: 1px solid var(--line); border-radius: 8px; color: var(--secondary); background: rgba(255,255,255,0.035); padding: 5px 9px; font-family: "DM Mono", monospace; font-size: 0.82rem; text-align: left; }
+.price-button:hover { border-color: var(--secondary); color: var(--ink); background: rgba(165, 180, 252, 0.16); }
+.lines-consensus { margin: 14px 0 6px; font-family: "DM Mono", monospace; font-size: 0.85rem; }
+.best-prices { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; padding: 0; list-style: none; }
+.best-prices li { border: 1px solid rgba(167, 243, 208, 0.4); border-radius: 999px; color: var(--accent); padding: 4px 10px; font-family: "DM Mono", monospace; font-size: 0.75rem; }
+.chart-row { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin: 18px 0; }
+.line-chart { margin: 0; color: var(--secondary); }
+.line-chart svg { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; background: rgba(9, 15, 31, 0.5); }
+.line-chart figcaption { margin-top: 6px; color: var(--muted); font-size: 0.78rem; }
+.reference-lines { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0 0 16px; }
+.reference-lines dt { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.reference-lines dd { margin: 2px 0 0; font-family: "DM Mono", monospace; font-size: 0.85rem; }
+.bet-form { margin-top: 16px; padding: 16px 18px; }
+.bet-fields { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); margin: 12px 0; }
+.bet-fields label { display: grid; gap: 6px; }
+.bet-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }

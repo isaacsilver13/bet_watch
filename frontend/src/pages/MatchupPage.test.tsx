@@ -1,14 +1,25 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   fetchContext, fetchGame, formatMetric, formatTally, isStale, METRIC_ROWS,
   type ContextResponse, type RecordSet, type TeamContext,
 } from "../lib/matchup";
+import { fetchLines, type LinesResponse } from "../lib/lines";
 import type { SlateGame } from "../lib/slate";
 import { MatchupPage } from "./MatchupPage";
+
+vi.mock("../lib/lines", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/lines")>();
+  return { ...actual, fetchLines: vi.fn() };
+});
+
+const NO_LINES: LinesResponse = {
+  game_id: 7, event_id: null, reference: {}, books: [], best: {}, consensus: null, history: [],
+  snapshot_at: null, quota_remaining: null, can_refresh: false,
+};
 
 vi.mock("../lib/matchup", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/matchup")>();
@@ -90,15 +101,30 @@ describe("MatchupPage", () => {
     cleanup();
     vi.mocked(fetchGame).mockReset();
     vi.mocked(fetchContext).mockReset();
+    vi.mocked(fetchLines).mockReset();
   });
 
-  it("shows the header with line and weather, and the records tab first", async () => {
+  beforeEach(() => {
+    vi.mocked(fetchLines).mockResolvedValue(NO_LINES);
+  });
+
+  it("opens on the lines tab with the header, line and weather", async () => {
     vi.mocked(fetchGame).mockResolvedValue(GAME);
     vi.mocked(fetchContext).mockResolvedValue(context());
     renderPage();
     expect(await screen.findByRole("heading", { name: "Seattle Seahawks at Denver Broncos" })).toBeInTheDocument();
     expect(screen.getByText("DEN -1.5")).toBeInTheDocument();
     expect(screen.getByText("55° · 12 mph wind · Overcast")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Lines" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("No sportsbook prices yet")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Recent games")).not.toBeInTheDocument();  // only for the context tabs
+  });
+
+  it("shows the records tab with both teams' tallies", async () => {
+    vi.mocked(fetchGame).mockResolvedValue(GAME);
+    vi.mocked(fetchContext).mockResolvedValue(context());
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "Records" }));
     expect((await screen.findAllByText("2-1 SU · 2-1 ATS · 2-0-1 O/U")).length).toBe(2);
     expect(screen.getByRole("link", { name: "Back to slate" })).toHaveAttribute("href", "/nfl/2026/reg/6");
   });
@@ -145,6 +171,7 @@ describe("MatchupPage", () => {
     vi.mocked(fetchGame).mockResolvedValue(GAME);
     vi.mocked(fetchContext).mockResolvedValue(context());
     renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "Records" }));
     await screen.findAllByText("2-1 SU · 2-1 ATS · 2-0-1 O/U");
     fireEvent.change(screen.getByLabelText("Recent games"), { target: { value: "3" } });
     await waitFor(() => expect(fetchContext).toHaveBeenLastCalledWith("7", 3, expect.anything()));
@@ -156,6 +183,7 @@ describe("MatchupPage", () => {
       data_as_of: { records: null, efficiency: null, situational: null, injuries: "2020-01-01T00:00:00Z" },
     }));
     renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "Records" }));
     expect(await screen.findByText("No data loaded yet")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Injuries" }));
     expect(await screen.findByText(/· stale/)).toBeInTheDocument();

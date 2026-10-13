@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { GlassCard } from "../components/GlassCard";
+import { LinesPanel } from "../components/LinesPanel";
 import {
   METRIC_ROWS,
   fetchContext,
@@ -18,6 +19,7 @@ import {
 import { formatSpread, weatherText, type SlateGame } from "../lib/slate";
 
 const TABS = [
+  { id: "lines", label: "Lines", asOf: null },
   { id: "records", label: "Records", asOf: "records" },
   { id: "efficiency", label: "Efficiency", asOf: "efficiency" },
   { id: "situation", label: "Situation", asOf: "situational" },
@@ -209,7 +211,7 @@ function GameHeader({ game }: { game: SlateGame }) {
 
 export function MatchupPage() {
   const { id = "" } = useParams();
-  const [tab, setTab] = useState<TabId>("records");
+  const [tab, setTab] = useState<TabId>("lines");
   const [lastN, setLastN] = useState(5);
   const game = useQuery({ queryKey: ["game", id], queryFn: ({ signal }) => fetchGame(id, signal) });
   const context = useQuery({
@@ -220,7 +222,8 @@ export function MatchupPage() {
   const slateLink = game.data
     ? `/nfl/${game.data.season}/${game.data.season_type.toLowerCase()}/${game.data.week}`
     : "/nfl";
-  const error = game.error ?? context.error;
+  const onContextTab = active.asOf !== null;
+  const error = game.error ?? (onContextTab ? context.error : null);
 
   return (
     <main className="app-shell">
@@ -229,7 +232,9 @@ export function MatchupPage() {
           <p className="eyebrow">Matchup</p>
           <h1>{game.data ? `${game.data.away.name} at ${game.data.home.name}` : "Matchup"}</h1>
         </div>
-        <nav className="app-nav" aria-label="Sections"><Link to={slateLink}>Back to slate</Link></nav>
+        <nav className="app-nav" aria-label="Sections">
+          <Link to={slateLink}>Back to slate</Link> · <Link to="/bets">Bets</Link>
+        </nav>
       </header>
 
       {error && <div className="notice error-notice" role="alert">{error instanceof Error ? error.message : "Could not load the matchup"}</div>}
@@ -250,16 +255,23 @@ export function MatchupPage() {
             </button>
           ))}
         </div>
-        <label>
-          <span className="control-label">Recent games</span>
-          <select value={lastN} onChange={(event) => setLastN(Number(event.target.value))}>
-            {LAST_N_CHOICES.map((choice) => <option key={choice} value={choice}>Last {choice}</option>)}
-          </select>
-        </label>
+        {onContextTab && (
+          <label>
+            <span className="control-label">Recent games</span>
+            <select value={lastN} onChange={(event) => setLastN(Number(event.target.value))}>
+              {LAST_N_CHOICES.map((choice) => <option key={choice} value={choice}>Last {choice}</option>)}
+            </select>
+          </label>
+        )}
       </section>
 
-      {context.isLoading && <div className="skeleton-card" aria-label="Loading context"><span /><span /><span /></div>}
-      {context.data && (
+      {tab === "lines" && game.data && (
+        <section role="tabpanel"><LinesPanel game={game.data} /></section>
+      )}
+      {onContextTab && context.isLoading && (
+        <div className="skeleton-card" aria-label="Loading context"><span /><span /><span /></div>
+      )}
+      {onContextTab && context.data && active.asOf && (
         <section aria-live="polite" role="tabpanel">
           <FreshnessLine asOf={context.data.data_as_of[active.asOf]} keyName={active.asOf} />
           {tab === "records" && <RecordsPanel ctx={context.data} />}

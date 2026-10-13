@@ -74,7 +74,9 @@ export function SlatePage() {
           <p className="eyebrow">NFL slate</p>
           <h1>{data ? `${data.season} · ${weekLabel(data)}` : "Slate"}</h1>
         </div>
-        <nav className="app-nav" aria-label="Sections"><Link to="/odds">Odds board</Link></nav>
+        <nav className="app-nav" aria-label="Sections">
+          <Link to="/bets">Bets</Link> · <Link to="/odds">Odds board</Link>
+        </nav>
       </header>
 
       <section className="control-band" aria-label="Week picker">
