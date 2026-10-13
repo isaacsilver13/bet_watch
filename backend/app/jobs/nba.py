@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 from app.ingest.espn import fetch_scoreboard_day, parse_scoreboard
 from app.ingest.nba_stats import SEASON_TYPES, fetch_team_game_logs, parse_team_game_logs
+from app.jobs.context import InjuriesJob
 from app.jobs.nfl import EspnClosesJob, LinkEventsJob
 from app.jobs.runner import JobContext
 from app.jobs.slots import Slot, daily_slot, hourly_slots
@@ -111,6 +112,7 @@ NBA_JOBS = [
     NbaScoreboardJob(),
     EspnClosesJob(NBA, "nba_closes"),
     NbaTeamStatsJob(),
+    InjuriesJob(NBA, "nba_injuries", step=6),
     LinkEventsJob(NBA, "nba_link_events"),
     NbaHistoryJob(),
 ]

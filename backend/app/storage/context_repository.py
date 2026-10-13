@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.identity import normalize_name
@@ -148,6 +148,31 @@ class ContextRepository:
                 row.fetched_at = fetched_at
                 result.saved += 1
         return result
+
+    async def injury_snapshot(
+        self, sport: str, team_ids: set[int], as_of: datetime
+    ) -> tuple[dict[int, list[Injury]], Optional[datetime]]:
+        """The newest report of `sport` at or before `as_of`, grouped by team.
+
+        Scoped to the sport: each sport's job writes its own snapshots, and another sport's
+        newer report must not hide this one."""
+        async with self.session_factory() as session:
+            observed = await session.scalar(
+                select(func.max(Injury.observed_at))
+                .join(Team, Team.id == Injury.team_id)
+                .where(Team.sport == sport, Injury.observed_at <= as_of)
+            )
+            by_team: dict[int, list[Injury]] = {team_id: [] for team_id in team_ids}
+            if observed is None:
+                return by_team, None
+            rows = await session.scalars(
+                select(Injury)
+                .where(Injury.observed_at == observed, Injury.team_id.in_(team_ids))
+                .order_by(Injury.status, Injury.player)
+            )
+            for row in rows.all():
+                by_team[row.team_id].append(row)
+            return by_team, aware(observed)
 
     async def save_injuries(
         self, sport: str, records: Sequence[InjuryRecord], observed_at: datetime

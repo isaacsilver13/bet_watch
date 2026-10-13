@@ -76,17 +76,28 @@ class TeamStatsHistoryJob:
 
 
 class InjuriesJob:
-    name = "injuries"
+    """ESPN's league injury report. Daily by default; `step` hours apart for a sport whose
+    report changes through the day (the NBA, three times: 10:00, 16:00 and 22:00 Central)."""
+
     max_attempts = 3
 
+    def __init__(
+        self, sport: str = NFL, name: str = "injuries", step: Optional[int] = None
+    ) -> None:
+        self.sport, self.name, self.step = sport, name, step
+
     def slots(self, now: datetime) -> list[Slot]:
-        return daily_slot(self.name, now)
+        if self.step is None:
+            return daily_slot(self.name, now)
+        return hourly_slots(self.name, now, first_hour=10, last_hour=22, step=self.step)
 
     async def run(self, ctx: JobContext, slot: Slot) -> str:
-        records = parse_injuries(await fetch_injuries(ctx.http, NFL))
+        records = parse_injuries(await fetch_injuries(ctx.http, self.sport))
         if not records:
             return "empty"  # ponytail: an all-clear league keeps showing the last snapshot
-        result = await ContextRepository(ctx.session_factory).save_injuries(NFL, records, _now())
+        result = await ContextRepository(ctx.session_factory).save_injuries(
+            self.sport, records, _now()
+        )
         if result.unknown_teams:
             logger.warning("injuries: unknown ESPN team ids %s", result.unknown_teams)
         return "done"
