@@ -258,3 +258,10 @@ select { min-height: 39px; border: 1px solid var(--line); border-radius: 8px; co
 .bet-fields { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); margin: 12px 0; }
 .bet-fields label { display: grid; gap: 6px; }
 .bet-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.summary-cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 16px 0; }
+.stat { border: 1px solid var(--line); border-radius: 12px; background: rgba(9, 15, 31, 0.5); padding: 12px 14px; }
+.stat dt { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.stat dd { margin: 4px 0 0; font-family: "DM Mono", monospace; font-size: 1.25rem; }
+.stat small { display: block; margin-top: 3px; color: var(--muted); font-size: 0.72rem; }
+.positive { color: var(--accent); }
+.negative { color: var(--danger); }
