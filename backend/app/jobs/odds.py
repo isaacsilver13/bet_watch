@@ -146,9 +146,21 @@ class OddsSnapshotJob:
         if ctx.odds is None or ctx.settings is None:
             return []  # fixture mode, or no key: nothing to spend
         nba = self.sport is Sport.NBA
-        nearby = await GamesRepository(ctx.session_factory).scheduled_games(
-            self.sport.value, now - timedelta(hours=12), now + timedelta(hours=24 if nba else 12)
-        )
+        if nba:
+            # A finished game still anchors its night: the first and last tip are judged on the
+            # whole Central date (yesterday's too), or a matinee going final would promote the
+            # evening game to "first tip" and buy another snapshot.
+            midnight = datetime.combine(
+                now.astimezone(CENTRAL).date() - timedelta(days=1), time(0), CENTRAL
+            )
+            nearby = await GamesRepository(ctx.session_factory).scheduled_games(
+                self.sport.value, midnight, now + timedelta(hours=24),
+                statuses=("scheduled", "in_progress", "final"),
+            )
+        else:
+            nearby = await GamesRepository(ctx.session_factory).scheduled_games(
+                self.sport.value, now - timedelta(hours=12), now + timedelta(hours=12)
+            )
         tips = {g.start_time for g in nearby}
         if nba:
             planned = [*nba_open_slots(now, self.name), *nba_pre_tip_slots(tips, self.name)]

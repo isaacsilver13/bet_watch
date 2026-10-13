@@ -201,14 +201,18 @@ class GamesRepository:
             return list(rows.all())
 
     async def scheduled_games(
-        self, sport: str, start: datetime, end: datetime
+        self,
+        sport: str,
+        start: datetime,
+        end: datetime,
+        statuses: tuple[str, ...] = ("scheduled", "in_progress"),  # not yet over
     ) -> list[ScheduledGame]:
         async with self.session_factory() as session:
             rows = await session.scalars(
                 select(Game)
                 .where(
                     Game.sport == sport,
-                    Game.status.in_(("scheduled", "in_progress")),  # not yet over
+                    Game.status.in_(statuses),
                     Game.start_time >= start,
                     Game.start_time < end,
                 )

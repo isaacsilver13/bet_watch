@@ -123,7 +123,10 @@ async def ops_health(
         snapshots = (
             await session.scalars(
                 select(JobSlot)
-                .where(JobSlot.job == "odds_snapshot", JobSlot.coverage.is_not(None))
+                .where(
+                    JobSlot.job.in_(("odds_snapshot", "odds_snapshot_nba")),
+                    JobSlot.coverage.is_not(None),
+                )
                 .order_by(JobSlot.updated_at.desc())
                 .limit(1)
             )

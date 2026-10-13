@@ -124,13 +124,14 @@ async def _previous(
 async def _recent_stops(
     session: AsyncSession, sport: str, team_id: int, before: datetime
 ) -> list[Stop]:
-    """The team's last few completed games before `before`, as places and times."""
+    """The team's last few games before `before`, as places and times. Games not yet played still
+    count: tomorrow's matchup is a back-to-back with tonight's game, which is still scheduled."""
     games = (
         await session.scalars(
             select(Game)
             .where(
                 Game.sport == sport,
-                Game.status == "final",
+                Game.status.notin_(("postponed", "canceled")),
                 Game.season_type.in_(COUNTED_SEASON_TYPES),
                 Game.start_time < before,
                 or_(Game.home_team_id == team_id, Game.away_team_id == team_id),

@@ -9,7 +9,7 @@ from app.main import app
 from app.storage.bets_repository import BetsRepository
 from app.storage.database import create_session_factory
 from app.storage.games_repository import GamesRepository
-from app.storage.models import EventRecord, Game
+from app.storage.models import EventRecord, Game, JobSlot
 from app.storage.settlement import settle_final
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -73,3 +73,24 @@ def test_an_nba_bet_is_graded_from_the_final_score_and_summarized_under_nba(tmp_
         assert {f.sport for f in facts} == {"nba"}
 
     asyncio.run(scenario())
+
+
+def test_health_shows_the_nba_snapshot_coverage_when_it_is_the_latest(tmp_path) -> None:
+    async def setup():
+        factory = await _setup(tmp_path)
+        nfl = {"targeted": 3, "complete": 3, "books": {}}
+        nba = {"targeted": 4, "complete": 2, "books": {"FanDuel": {"spread": 4}}}
+        async with factory() as session, session.begin():
+            session.add(JobSlot(job="odds_snapshot", slot_key="odds_snapshot:nfl:x:open",
+                                state="done", attempts=1, coverage=nfl,
+                                updated_at=NOW - timedelta(days=2)))
+            session.add(JobSlot(job="odds_snapshot_nba", slot_key="odds_snapshot_nba:nba:x:open",
+                                state="partial", attempts=1, coverage=nba,
+                                updated_at=NOW - timedelta(hours=2)))
+
+    asyncio.run(setup())
+    factory = create_session_factory(create_async_engine(db_url(tmp_path)))
+    app.dependency_overrides[get_session_factory] = lambda: factory
+    app.dependency_overrides[get_now] = lambda: NOW
+    body = TestClient(app).get("/api/v1/ops/health").json()
+    assert body["snapshot_coverage"]["targeted"] == 4

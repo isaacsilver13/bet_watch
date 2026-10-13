@@ -154,6 +154,24 @@ def test_schedule_spots_count_the_games_before_tonight(tmp_path) -> None:
     assert bos["short_week"] is False and bos["off_bye"] is False  # NFL notions
 
 
+def test_tomorrows_game_counts_tonights_game_that_has_not_been_played_yet(tmp_path) -> None:
+    client = _client(tmp_path)
+    tomorrow = GameRecord(
+        espn_id="5", season=2026, season_type="REG", week=None, start_time=utc(1, 17),
+        status="scheduled", home_name="CHA", away_name="BOS", home_score=None,
+        away_score=None, neutral=False,
+    )  # Jan 16, 7:30pm Eastern: BOS plays tonight at MIA and again tomorrow
+
+    async def add() -> None:
+        factory = create_session_factory(create_async_engine(db_url(tmp_path)))
+        await GamesRepository(factory).upsert_games("nba", "espn", [tomorrow], NOW)
+
+    asyncio.run(add())
+    bos = _context(client, _game_id(tmp_path, "5"))["away"]["situation"]
+    assert (bos["rest_days"], bos["back_to_back"], bos["previous_opponent"]) == (1, True, "MIA")
+    assert bos["games_last_7"] == 3  # Jan 10, Jan 14 and tonight's
+
+
 def test_injuries_come_from_the_nba_report_and_there_is_no_quarterback_flag(tmp_path) -> None:
     body = _context(_client(tmp_path), _viewed(tmp_path))
     assert body["away"]["qb_flag"] is None and body["home"]["qb_flag"] is None

@@ -147,6 +147,28 @@ def test_each_job_plans_only_its_own_sports_games(tmp_path, monkeypatch) -> None
     asyncio.run(scenario())
 
 
+def test_games_that_have_already_finished_still_anchor_the_nights_snapshots(
+    tmp_path, monkeypatch
+) -> None:
+    """A matinee going final must not promote the evening game to 'first tip' (a new paid call)."""
+    async def scenario() -> None:
+        evening = datetime(2026, 1, 15, 18, 35, tzinfo=CENTRAL).astimezone(timezone.utc)
+        ctx, _ = await _setup(tmp_path, monkeypatch, now=evening)
+        tips = [(11, 0, "final"), (13, 30, "final"), (19, 0, "scheduled"), (21, 30, "scheduled")]
+        async with ctx.session_factory() as session, session.begin():
+            games = (await session.scalars(
+                select(Game).where(Game.sport == "nba").order_by(Game.id).limit(4))).all()
+            for game, (hour, minute, status) in zip(games, tips):
+                local = datetime(2026, 1, 15, hour, minute, tzinfo=CENTRAL)
+                game.start_time = local.astimezone(timezone.utc).replace(tzinfo=None)
+                game.status = status
+        keys = {s.key for s in await _job().plan_slots(ctx, evening) if "pre_kick" in s.key}
+        assert keys == {f"{NAME}:nba:2026-01-15:pre_kick:1100",
+                        f"{NAME}:nba:2026-01-15:pre_kick:2130"}
+
+    asyncio.run(scenario())
+
+
 def test_the_nba_job_is_registered_next_to_the_nfl_one() -> None:
     from app.jobs.__main__ import JOBS
 
