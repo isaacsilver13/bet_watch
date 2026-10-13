@@ -4,18 +4,21 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.identity import normalize_name
+from app.ingest.nba_stats import GameLogRecord
 from app.ingest.nflverse_stats import TeamStatRecord
 from app.ingest.open_meteo import WeatherRecord
 from app.ingest.records import InjuryRecord
-from app.storage.games_repository import alias_map
+from app.storage.games_repository import alias_map, aware
 from app.storage.models import Game, Injury, Team, TeamGameStat, Venue, Weather
 
 OUTDOOR_ROOFS = ("outdoors", "retractable")
+EASTERN = ZoneInfo("America/New_York")  # stats.nba.com dates a game by its Eastern date
 SCHEDULED_GRACE = timedelta(hours=6)  # a "scheduled" game this far past kickoff is stale, skip it
 
 
@@ -88,6 +91,53 @@ class ContextRepository:
                 if game_id is None:
                     label = f"{record.season} {record.season_type} wk{record.week}"
                     result.unmatched.append(f"{label} {record.team}-{record.opponent}")
+                    continue
+                row = existing.get((game_id, team_id))
+                if row is None:
+                    row = TeamGameStat(game_id=game_id, team_id=team_id)
+                    session.add(row)
+                    existing[(game_id, team_id)] = row
+                row.stats = dict(record.stats)
+                row.fetched_at = fetched_at
+                result.saved += 1
+        return result
+
+    async def save_game_log_stats(
+        self, sport: str, records: Sequence[GameLogRecord], fetched_at: datetime
+    ) -> StatsResult:
+        """Attach each team-game row to its game by season, Eastern date and the two teams."""
+        result = StatsResult()
+        seasons = {record.season for record in records}
+        async with self.session_factory() as session, session.begin():
+            aliases = await alias_map(session, sport)
+            games: dict[tuple, int] = {}
+            game_rows = await session.execute(
+                select(
+                    Game.id, Game.season, Game.start_time, Game.home_team_id, Game.away_team_id
+                ).where(Game.sport == sport, Game.season.in_(seasons))
+            )
+            for game_id, season, start, home_id, away_id in game_rows.all():
+                day = aware(start).astimezone(EASTERN).date()
+                games[(season, day, frozenset((home_id, away_id)))] = game_id
+            existing = {
+                (row.game_id, row.team_id): row
+                for row in (
+                    await session.scalars(
+                        select(TeamGameStat)
+                        .join(Game, Game.id == TeamGameStat.game_id)
+                        .where(Game.sport == sport, Game.season.in_(seasons))
+                    )
+                ).all()
+            }
+            for record in records:
+                team_id = aliases.get(normalize_name(record.team))
+                opponent_id = aliases.get(normalize_name(record.opponent))
+                game_id = None
+                if team_id is not None and opponent_id is not None:
+                    pair = frozenset((team_id, opponent_id))
+                    game_id = games.get((record.season, record.game_date, pair))
+                if game_id is None:
+                    result.unmatched.append(f"{record.game_date} {record.team}-{record.opponent}")
                     continue
                 row = existing.get((game_id, team_id))
                 if row is None:

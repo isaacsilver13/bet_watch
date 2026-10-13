@@ -5,9 +5,11 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from app.ingest.espn import fetch_scoreboard_day, parse_scoreboard
+from app.ingest.nba_stats import SEASON_TYPES, fetch_team_game_logs, parse_team_game_logs
 from app.jobs.nfl import EspnClosesJob, LinkEventsJob
 from app.jobs.runner import JobContext
-from app.jobs.slots import Slot, hourly_slots
+from app.jobs.slots import Slot, daily_slot, hourly_slots
+from app.storage.context_repository import ContextRepository
 from app.storage.games_repository import GamesRepository
 
 logger = logging.getLogger(__name__)
@@ -79,9 +81,36 @@ class NbaHistoryJob:
         return await closes.run(ctx, slot)
 
 
+class NbaTeamStatsJob:
+    """Advanced and four-factor game logs for the current season, refreshed daily."""
+
+    name = "nba_team_stats"
+    max_attempts = 3
+
+    def slots(self, now: datetime) -> list[Slot]:
+        return daily_slot(self.name, now)
+
+    async def run(self, ctx: JobContext, slot: Slot) -> str:
+        season = nba_season_year(_now())
+        records = []
+        for season_type in SEASON_TYPES:
+            advanced = await fetch_team_game_logs(ctx.http, season, season_type, "Advanced")
+            factors = await fetch_team_game_logs(ctx.http, season, season_type, "Four Factors")
+            records.extend(parse_team_game_logs(advanced, factors))
+        if not records:
+            return "empty"  # the season has no games yet
+        result = await ContextRepository(ctx.session_factory).save_game_log_stats(
+            NBA, records, _now()
+        )
+        if result.unmatched:
+            logger.warning("nba_team_stats: %s rows had no game yet", len(result.unmatched))
+        return "done" if result.saved else "empty"
+
+
 NBA_JOBS = [
     NbaScoreboardJob(),
     EspnClosesJob(NBA, "nba_closes"),
+    NbaTeamStatsJob(),
     LinkEventsJob(NBA, "nba_link_events"),
     NbaHistoryJob(),
 ]
