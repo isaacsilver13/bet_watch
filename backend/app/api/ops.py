@@ -26,6 +26,7 @@ from app.storage.repository import OddsRepository
 router = APIRouter(prefix="/api/v1")
 HEARTBEAT_STALE_AFTER = timedelta(minutes=45)  # Task Scheduler fires every 15; three misses
 LOOKBACK = timedelta(days=7)
+SPORTS = ("nfl", "nba")
 EVENT_HORIZON = timedelta(days=10)  # the schedule is only loaded a week or two ahead
 
 
@@ -127,6 +128,17 @@ async def ops_health(
                 .limit(1)
             )
         ).all()
+    unlinked: list[str] = []
+    missing_closes = 0
+    for sport in SPORTS:
+        unlinked.extend(
+            await unlinked_events(
+                session_factory, sport, now - timedelta(hours=12), now + EVENT_HORIZON
+            )
+        )
+        missing_closes += len(
+            await games.finals_missing_close(sport, since=now - timedelta(days=14))
+        )
     return OpsHealth(
         generated_at=now,
         run_due_last_at=aware(beat) if beat else None,
@@ -144,11 +156,7 @@ async def ops_health(
         slots_today=dict(Counter(today)),
         credits_remaining=await OddsRepository(session_factory).latest_quota(PROVIDER),
         snapshot_coverage=snapshots[0].coverage if snapshots else None,
-        unlinked_events=await unlinked_events(
-            session_factory, "nfl", now - timedelta(hours=12), now + EVENT_HORIZON
-        ),
+        unlinked_events=unlinked,
         stuck_raw_saved=sorted(stuck),
-        finals_missing_close=len(
-            await games.finals_missing_close("nfl", since=now - timedelta(days=14))
-        ),
+        finals_missing_close=missing_closes,
     )
