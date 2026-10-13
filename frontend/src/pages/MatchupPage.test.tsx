@@ -50,7 +50,7 @@ function team(id: number, abbr: string, extra: Partial<TeamContext> = {}): TeamC
 }
 
 const GAME: SlateGame = {
-  id: 7, espn_id: "401872995", season: 2026, season_type: "REG", week: 6,
+  id: 7, sport: "nfl", espn_id: "401872995", season: 2026, season_type: "REG", week: 6,
   start_time: "2026-10-16T00:15:00Z", status: "scheduled",
   home: { id: 10, abbr: "DEN", name: "Denver Broncos" }, away: { id: 26, abbr: "SEA", name: "Seattle Seahawks" },
   home_score: null, away_score: null, venue: "Empower Field at Mile High", roof: "outdoors", neutral: false,

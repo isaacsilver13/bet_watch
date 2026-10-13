@@ -35,7 +35,7 @@ export function OpsPage() {
           <p className="eyebrow">System</p>
           <h1>Health</h1>
         </div>
-        <nav className="app-nav" aria-label="Sections"><Link to="/nfl">Slate</Link> · <Link to="/bets">Bets</Link></nav>
+        <nav className="app-nav" aria-label="Sections"><Link to="/nfl">NFL</Link> · <Link to="/nba">NBA</Link> · <Link to="/bets">Bets</Link></nav>
       </header>
 
       {error && <div className="notice error-notice" role="alert">{error.message}</div>}

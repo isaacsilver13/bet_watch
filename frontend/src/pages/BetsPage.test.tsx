@@ -82,6 +82,14 @@ describe("BetsPage", () => {
     expect(within(table).getByRole("row", { name: /DraftKings/ })).toBeInTheDocument();
   });
 
+  it("links to both sports' slates", async () => {
+    vi.mocked(fetchBets).mockResolvedValue([]);
+    vi.mocked(fetchSummary).mockResolvedValue(SUMMARY);
+    renderPage();
+    expect(await screen.findByRole("link", { name: "NFL" })).toHaveAttribute("href", "/nfl");
+    expect(screen.getByRole("link", { name: "NBA" })).toHaveAttribute("href", "/nba");
+  });
+
   it("lists each bet with its result, profit and closing-line value", async () => {
     vi.mocked(fetchBets).mockResolvedValue(BETS);
     vi.mocked(fetchSummary).mockResolvedValue(SUMMARY);

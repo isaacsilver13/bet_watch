@@ -158,7 +158,7 @@ export function BetsPage() {
           <h1>Bets</h1>
         </div>
         <nav className="app-nav" aria-label="Sections">
-          <Link to="/nfl">Slate</Link> · <Link to="/odds">Odds board</Link> · <Link to="/ops">System health</Link>
+          <Link to="/nfl">NFL</Link> · <Link to="/nba">NBA</Link> · <Link to="/odds">Odds board</Link> · <Link to="/ops">System health</Link>
         </nav>
       </header>
 
