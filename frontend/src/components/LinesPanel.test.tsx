@@ -157,6 +157,20 @@ describe("LinesPanel", () => {
     expect(screen.getAllByText(/not enough snapshots yet/i)).toHaveLength(2);  // one per chart
   });
 
+  it("tells an NBA game when to expect prices, in the NBA's own rhythm", async () => {
+    vi.mocked(fetchLines).mockResolvedValue(lines({
+      books: [], best: {}, consensus: null, history: [], snapshot_at: null, quota_remaining: null, can_refresh: false, event_id: null,
+    }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter><LinesPanel game={{ ...GAME, sport: "nba" }} /></MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText(/10am snapshot and shortly before the first and last tips/)).toBeInTheDocument();
+    expect(screen.queryByText(/Tuesday/)).not.toBeInTheDocument();
+  });
+
   it("marks old prices as stale and shows only this game's Kalshi contracts", async () => {
     vi.mocked(fetchLines).mockResolvedValue(lines({ snapshot_at: "2020-01-01T00:00:00Z" }));
     const contract = (eventId: string, title: string) => ({

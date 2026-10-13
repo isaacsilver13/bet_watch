@@ -22,8 +22,9 @@ from app.domain.lines import (
     LinesResponse,
     RefreshResponse,
 )
+from app.domain.models import Sport
 from app.domain.venues import venue_for_book
-from app.ingest.odds_snapshot import PROVIDER, SPORT, fetch_snapshot, ingest_snapshot
+from app.ingest.odds_snapshot import PROVIDER, fetch_snapshot, ingest_snapshot
 from app.providers.errors import OddsProviderError
 from app.providers.the_odds_api.client import TheOddsApiClient
 from app.storage.games_repository import aware
@@ -150,7 +151,8 @@ async def refresh_game(
     if not _may_spend(request):
         raise HTTPException(403, detail="Refresh needs the admin token.")
     repo = OddsRepository(session_factory)
-    latest = await repo.latest_snapshot_at(PROVIDER)
+    sport = Sport(game.sport)
+    latest = await repo.latest_snapshot_at(PROVIDER, sport)
     if latest is not None and now - aware(latest) < REFRESH_COOLDOWN:
         return RefreshResponse(refreshed=False, reason="recent", snapshot_at=aware(latest))
     quota = await repo.latest_quota(PROVIDER)
@@ -160,17 +162,17 @@ async def refresh_game(
         return RefreshResponse(refreshed=False, reason="throttled", quota_remaining=quota)
 
     kickoff = aware(game.start_time)
-    slot_key = f"odds_snapshot:nfl:manual:{now:%Y%m%dT%H%M%S}:{game_id}"
+    slot_key = f"odds_snapshot:{sport.value}:manual:{now:%Y%m%dT%H%M%S}:{game_id}"
     try:
-        path, remaining = await fetch_snapshot(runtime.odds, runtime.raw_dir, slot_key, now)
+        path, remaining = await fetch_snapshot(runtime.odds, runtime.raw_dir, slot_key, now, sport)
     except OddsProviderError as error:
         await repo.record_refresh_failure(
-            PROVIDER, now, now, error.error_type, str(error), SPORT, runtime.odds.quota_remaining
+            PROVIDER, now, now, error.error_type, str(error), sport, runtime.odds.quota_remaining
         )
         detail = f"The Odds API request failed: {error.error_type}"
         raise HTTPException(502, detail=detail) from error
     result = await ingest_snapshot(
-        session_factory, path, (kickoff, kickoff + timedelta(minutes=1)), remaining
+        session_factory, path, (kickoff, kickoff + timedelta(minutes=1)), remaining, sport
     )
     return RefreshResponse(
         refreshed=True,

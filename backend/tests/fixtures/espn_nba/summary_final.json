@@ -1,0 +1,78 @@
+{
+ "pickcenter": [
+  {
+   "provider": {
+    "id": "100",
+    "name": "DraftKings"
+   },
+   "moneyline": {
+    "displayName": "Moneyline",
+    "shortDisplayName": "ML",
+    "home": {
+     "close": {
+      "odds": "-230"
+     },
+     "open": {
+      "odds": "-180"
+     }
+    },
+    "away": {
+     "close": {
+      "odds": "+190"
+     },
+     "open": {
+      "odds": "+150"
+     }
+    }
+   },
+   "pointSpread": {
+    "displayName": "Spread",
+    "shortDisplayName": "Spread",
+    "home": {
+     "close": {
+      "line": "-5.5",
+      "odds": "-108"
+     },
+     "open": {
+      "line": "-4.5",
+      "odds": "-112"
+     }
+    },
+    "away": {
+     "close": {
+      "line": "+5.5",
+      "odds": "-112"
+     },
+     "open": {
+      "line": "+4.5",
+      "odds": "-108"
+     }
+    }
+   },
+   "total": {
+    "displayName": "Total",
+    "shortDisplayName": "Total",
+    "over": {
+     "close": {
+      "line": "o227.5",
+      "odds": "-108"
+     },
+     "open": {
+      "line": "o230.5",
+      "odds": "-110"
+     }
+    },
+    "under": {
+     "close": {
+      "line": "u227.5",
+      "odds": "-112"
+     },
+     "open": {
+      "line": "u230.5",
+      "odds": "-110"
+     }
+    }
+   }
+  }
+ ]
+}

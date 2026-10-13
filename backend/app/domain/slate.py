@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel
@@ -33,6 +33,7 @@ class WeatherView(BaseModel):
 
 class SlateGame(BaseModel):
     id: int
+    sport: str
     espn_id: str
     season: int
     season_type: str
@@ -56,6 +57,16 @@ class SlateGame(BaseModel):
 class WeekRef(BaseModel):
     season_type: str
     week: int
+
+
+class DaySlateResponse(BaseModel):
+    """A sport with no weeks (the NBA): one Eastern calendar day of games."""
+
+    sport: str
+    date: date
+    previous: Optional[date]  # the nearest earlier day with games
+    next: Optional[date]  # the nearest later day with games
+    games: list[SlateGame]
 
 
 class SlateResponse(BaseModel):

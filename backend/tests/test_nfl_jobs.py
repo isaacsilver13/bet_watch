@@ -7,7 +7,7 @@ from app.jobs.__main__ import main
 from app.jobs.nfl import EspnClosesJob, EspnScoreboardJob, NflHistoryJob, SeedJob
 from app.jobs.runner import JobContext
 from app.jobs.slots import Slot
-from app.storage.models import Game, GameLine
+from app.storage.models import Game, GameLine, Team
 from sqlalchemy import func, select
 
 from tests.matchup_helpers import load_json, new_session_factory
@@ -102,3 +102,14 @@ def test_cli_rejects_unknown_job() -> None:
 def test_history_runs_daily_so_a_missed_tuesday_cannot_hide_the_qb_flag() -> None:
     sunday = datetime(2026, 10, 11, 15, tzinfo=timezone.utc)
     assert [s.key for s in NflHistoryJob().slots(sunday)] == ["nfl_history:2026-10-11"]
+
+
+def test_the_seed_job_seeds_every_sport(tmp_path) -> None:
+    async def scenario() -> None:
+        ctx = await _ctx(tmp_path, [])
+        async with ctx.session_factory() as session:
+            by_sport = dict((await session.execute(
+                select(Team.sport, func.count()).group_by(Team.sport))).all())
+        assert by_sport == {"nfl": 32, "nba": 30}
+
+    asyncio.run(scenario())

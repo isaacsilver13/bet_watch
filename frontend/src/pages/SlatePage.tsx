@@ -1,15 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { GlassCard } from "../components/GlassCard";
-import { fetchSlate, formatSpread, weatherText, type SlateGame, type WeekRef } from "../lib/slate";
-
-const STATUS_LABELS: Record<string, string> = {
-  in_progress: "Live",
-  final: "Final",
-  postponed: "Postponed",
-  canceled: "Canceled",
-};
+import { GameCard } from "../components/GameCard";
+import { fetchSlate, type WeekRef } from "../lib/slate";
 
 function weekLabel(ref: WeekRef): string {
   if (ref.season_type === "POST") return `Playoffs round ${ref.week}`;
@@ -18,41 +11,6 @@ function weekLabel(ref: WeekRef): string {
 
 function weekPath(season: number, ref: WeekRef): string {
   return `/nfl/${season}/${ref.season_type.toLowerCase()}/${ref.week}`;
-}
-
-function kickoff(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
-}
-
-function statusText(game: SlateGame): string {
-  const label = STATUS_LABELS[game.status];
-  if (!label) return kickoff(game.start_time);
-  const score = game.home_score !== null && game.away_score !== null
-    ? ` · ${game.away.abbr} ${game.away_score}–${game.home_score} ${game.home.abbr}`
-    : "";
-  return `${label}${score}`;
-}
-
-function GameCard({ game }: { game: SlateGame }) {
-  const latest = game.lines.close ?? game.lines.current;
-  const opener = game.lines.open;
-  return (
-    <GlassCard className="slate-card">
-      <div className="slate-card-head">
-        <h3><Link to={`/game/${game.id}`}>{game.away.abbr} @ {game.home.abbr}</Link></h3>
-        <span className="slate-status">{statusText(game)}</span>
-      </div>
-      <p className="slate-venue">{game.venue ?? "Venue TBD"}{game.neutral ? " · neutral site" : ""}</p>
-      <dl className="slate-lines">
-        <div><dt>Spread</dt><dd>{formatSpread(game, latest?.spread_home)}</dd></div>
-        <div><dt>Total</dt><dd>{latest?.total != null ? `O/U ${latest.total}` : "—"}</dd></div>
-        <div><dt>Open</dt><dd>{opener ? `${formatSpread(game, opener.spread_home)} · ${opener.total ?? "—"}` : "—"}</dd></div>
-      </dl>
-      {weatherText(game) && <p className="slate-weather">{weatherText(game)}</p>}
-      {game.spread_move ? <p className="slate-move">Home line {game.spread_move > 0 ? "+" : ""}{game.spread_move} since open</p> : null}
-      {latest && <p className="slate-source">{latest.source} {game.lines.close ? "close" : "current"} line</p>}
-    </GlassCard>
-  );
 }
 
 export function SlatePage() {
@@ -75,7 +33,7 @@ export function SlatePage() {
           <h1>{data ? `${data.season} · ${weekLabel(data)}` : "Slate"}</h1>
         </div>
         <nav className="app-nav" aria-label="Sections">
-          <Link to="/bets">Bets</Link> · <Link to="/odds">Odds board</Link>
+          <Link to="/nba">NBA</Link> · <Link to="/bets">Bets</Link> · <Link to="/odds">Odds board</Link>
         </nav>
       </header>
 

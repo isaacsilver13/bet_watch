@@ -10,6 +10,8 @@ from app.identity import normalize_name
 from app.storage.models import Team, TeamAlias, Venue
 
 NFL_SEED = Path(__file__).parent / "data" / "nfl_teams.csv"
+NBA_SEED = Path(__file__).parent / "data" / "nba_teams.csv"
+SEEDS = {"nfl": NFL_SEED, "nba": NBA_SEED}
 
 
 def load_seed_rows(path: Path = NFL_SEED) -> list[dict[str, str]]:

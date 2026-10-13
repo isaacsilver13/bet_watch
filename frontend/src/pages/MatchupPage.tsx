@@ -5,28 +5,36 @@ import { Link, useParams } from "react-router-dom";
 import { GlassCard } from "../components/GlassCard";
 import { LinesPanel } from "../components/LinesPanel";
 import {
-  METRIC_ROWS,
   fetchContext,
   fetchGame,
   formatMetric,
   formatTally,
   isStale,
+  metricRowsFor,
   type ContextResponse,
   type Injury,
   type RecordSet,
   type TeamContext,
 } from "../lib/matchup";
-import { formatSpread, weatherText, type SlateGame } from "../lib/slate";
+import { formatSpread, slatePath, weatherText, type SlateGame } from "../lib/slate";
 
-const TABS = [
+const TAB_IDS = ["lines", "records", "efficiency", "situation", "injuries", "h2h"] as const;
+type TabId = (typeof TAB_IDS)[number];
+interface TabSpec { id: TabId; label: string; asOf: string | null }
+// The data behind a tab has the same id in both sports; only its name differs.
+const NFL_TABS: TabSpec[] = [
   { id: "lines", label: "Lines", asOf: null },
   { id: "records", label: "Records", asOf: "records" },
   { id: "efficiency", label: "Efficiency", asOf: "efficiency" },
   { id: "situation", label: "Situation", asOf: "situational" },
   { id: "injuries", label: "Injuries", asOf: "injuries" },
   { id: "h2h", label: "Head-to-head", asOf: "records" },
-] as const;
-type TabId = (typeof TABS)[number]["id"];
+];
+const NBA_TABS: TabSpec[] = NFL_TABS.map((tab) =>
+  tab.id === "efficiency" ? { ...tab, label: "Ratings" }
+    : tab.id === "situation" ? { ...tab, label: "Schedule" }
+      : tab,
+);
 const LAST_N_CHOICES = [3, 5, 8, 10];
 
 function when(iso: string): string {
@@ -84,7 +92,7 @@ function RecordsPanel({ ctx }: { ctx: ContextResponse }) {
 }
 
 function EfficiencyPanel({ ctx }: { ctx: ContextResponse }) {
-  const rows = METRIC_ROWS.filter((row) => ctx.away.efficiency[row.key] || ctx.home.efficiency[row.key]);
+  const rows = metricRowsFor(ctx.sport).filter((row) => ctx.away.efficiency[row.key] || ctx.home.efficiency[row.key]);
   if (!rows.length) return <p className="empty-grid">No team stats loaded for this season yet.</p>;
   return (
     <TwoTeamTable
@@ -105,6 +113,26 @@ function yesNo(value: boolean): string {
 function SituationPanel({ ctx }: { ctx: ContextResponse }) {
   const cell = (value: number | string | null, unit = "") => (value === null ? "—" : `${value}${unit}`);
   const both = (read: (team: TeamContext) => string) => ({ away: read(ctx.away), home: read(ctx.home) });
+  if (ctx.sport === "nba") {
+    return (
+      <>
+        <TwoTeamTable
+          ctx={ctx}
+          rows={[
+            { label: "Days since last game", ...both((t) => cell(t.situation.rest_days)) },
+            { label: "Back-to-back", ...both((t) => yesNo(Boolean(t.situation.back_to_back))) },
+            { label: "Third game in four days", ...both((t) => yesNo(Boolean(t.situation.three_in_four))) },
+            { label: "Fourth game in six days", ...both((t) => yesNo(Boolean(t.situation.four_in_six))) },
+            { label: "Games in the last 7 days", ...both((t) => cell(t.situation.games_last_7 ?? null)) },
+            { label: "Travel from last game", ...both((t) => cell(t.situation.travel_miles, " mi")) },
+            { label: "Time zones crossed", ...both((t) => cell(t.situation.tz_crossed)) },
+            { label: "Last opponent", ...both((t) => cell(t.situation.previous_opponent)) },
+          ]}
+        />
+        {ctx.divisional && <p className="prediction-disclosure">Division game.</p>}
+      </>
+    );
+  }
   return (
     <>
       <TwoTeamTable
@@ -203,7 +231,7 @@ function GameHeader({ game }: { game: SlateGame }) {
       <dl className="slate-lines">
         <div><dt>Spread</dt><dd>{formatSpread(game, latest?.spread_home)}</dd></div>
         <div><dt>Total</dt><dd>{latest?.total != null ? `O/U ${latest.total}` : "—"}</dd></div>
-        <div><dt>Weather</dt><dd>{weather ?? "—"}</dd></div>
+        {game.sport !== "nba" && <div><dt>Weather</dt><dd>{weather ?? "—"}</dd></div>}
       </dl>
     </GlassCard>
   );
@@ -218,10 +246,10 @@ export function MatchupPage() {
     queryKey: ["context", id, lastN],
     queryFn: ({ signal }) => fetchContext(id, lastN, signal),
   });
-  const active = TABS.find((entry) => entry.id === tab) ?? TABS[0];
-  const slateLink = game.data
-    ? `/nfl/${game.data.season}/${game.data.season_type.toLowerCase()}/${game.data.week}`
-    : "/nfl";
+  const sport = game.data?.sport ?? context.data?.sport ?? "nfl";
+  const tabs = sport === "nba" ? NBA_TABS : NFL_TABS;
+  const active = tabs.find((entry) => entry.id === tab) ?? tabs[0];
+  const slateLink = game.data ? slatePath(game.data) : "/nfl";
   const onContextTab = active.asOf !== null;
   const error = game.error ?? (onContextTab ? context.error : null);
 
@@ -242,7 +270,7 @@ export function MatchupPage() {
 
       <section className="control-band" aria-label="Matchup sections">
         <div className="segmented-control" role="tablist">
-          {TABS.map((entry) => (
+          {tabs.map((entry) => (
             <button
               aria-selected={tab === entry.id}
               className={tab === entry.id ? "active" : ""}
@@ -280,7 +308,10 @@ export function MatchupPage() {
           {tab === "injuries" && <InjuriesPanel ctx={context.data} />}
           {tab === "h2h" && <HeadToHeadPanel ctx={context.data} />}
           <p className="prediction-disclosure">
-            Context, not betting advice. ATS and O/U use the closing line, ESPN first, then nflverse.
+            Context, not betting advice.{" "}
+            {sport === "nba"
+              ? "ATS and O/U use ESPN's closing line (DraftKings)."
+              : "ATS and O/U use the closing line, ESPN first, then nflverse."}
           </p>
         </section>
       )}

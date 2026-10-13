@@ -20,7 +20,7 @@ class BetIn(BaseModel):
     venue: Venue
     market: Market
     selection: Selection
-    line: Optional[float] = Field(default=None, ge=-100, le=200)  # the bet side's own number
+    line: Optional[float] = Field(default=None, ge=-100, le=400)  # the bet side's own number
     price_american: int = Field(ge=-10000, le=10000)
     stake: float = Field(gt=0, le=1_000_000)
     fee: Optional[float] = Field(default=None, ge=0, le=100)  # what the book charged, if known
@@ -43,7 +43,7 @@ class BetPatch(BaseModel):
     """Open bets only. A change to the venue or stake re-works the fee unless one is given."""
 
     venue: Optional[Venue] = None
-    line: Optional[float] = Field(default=None, ge=-100, le=200)
+    line: Optional[float] = Field(default=None, ge=-100, le=400)
     price_american: Optional[int] = Field(default=None, ge=-10000, le=10000)
     stake: Optional[float] = Field(default=None, gt=0, le=1_000_000)
     fee: Optional[float] = Field(default=None, ge=0, le=100)

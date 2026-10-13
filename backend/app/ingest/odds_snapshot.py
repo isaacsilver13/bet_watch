@@ -18,7 +18,6 @@ from app.storage.games_repository import GamesRepository
 from app.storage.repository import OddsRepository
 
 PROVIDER = "the_odds_api"
-SPORT = Sport.NFL
 
 
 @dataclass(frozen=True)
@@ -28,13 +27,13 @@ class SnapshotResult:
 
 
 async def fetch_snapshot(
-    client: TheOddsApiClient, raw_dir: Path, slot_key: str, now: datetime
+    client: TheOddsApiClient, raw_dir: Path, slot_key: str, now: datetime, sport: Sport
 ) -> tuple[Path, Optional[int]]:
     """One paid call. The body is on disk before anything reads it; returns (file, credits left).
 
     The time is cut to whole seconds because it becomes part of the file name, and a re-parse
     must stamp rows with exactly the time the first parse did."""
-    body = await client.fetch_odds_raw(SPORT)
+    body = await client.fetch_odds_raw(sport)
     path = write_raw(raw_dir, PROVIDER, slot_key, now.replace(microsecond=0), body)
     return path, client.quota_remaining
 
@@ -44,6 +43,7 @@ async def ingest_snapshot(
     path: Path,
     targets: tuple[datetime, datetime],
     quota_remaining: Optional[int],
+    sport: Sport,
 ) -> SnapshotResult:
     """Parse a saved response, store it (once), link events to games and score the coverage.
 
@@ -53,15 +53,15 @@ async def ingest_snapshot(
     comparisons = [
         canonicalize_comparison(comparison)
         for comparison in TheOddsApiProvider.normalize_events(
-            json.loads(read_raw(path)), SPORT, observed_at
+            json.loads(read_raw(path)), sport, observed_at
         )
     ]
     await OddsRepository(session_factory).record_snapshot(
-        PROVIDER, SPORT, comparisons, observed_at, quota_remaining
+        PROVIDER, sport, comparisons, observed_at, quota_remaining
     )
     games = GamesRepository(session_factory)
-    await games.link_events(SPORT.value)  # before scoring, so a linked game can be matched
-    scheduled = await games.scheduled_games(SPORT.value, *targets)
+    await games.link_events(sport.value)  # before scoring, so a linked game can be matched
+    scheduled = await games.scheduled_games(sport.value, *targets)
     coverage = snapshot_coverage(comparisons, [(g.id, g.event_id) for g in scheduled])
     if not scheduled:
         return SnapshotResult("empty", coverage)

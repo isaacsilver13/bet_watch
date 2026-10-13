@@ -27,12 +27,16 @@ class MetricView(BaseModel):
 
 
 class SituationView(BaseModel):
-    rest_days: Optional[int]
+    rest_days: Optional[int]  # days between games; the NFL's short week and bye, the NBA's b2b
     short_week: bool
     off_bye: bool
     travel_miles: Optional[int]
     tz_crossed: Optional[int]
     previous_opponent: Optional[str]
+    back_to_back: bool = False  # NBA only from here down
+    three_in_four: bool = False
+    four_in_six: bool = False
+    games_last_7: Optional[int] = None
 
 
 class InjuryView(BaseModel):
@@ -76,6 +80,7 @@ class HeadToHeadView(BaseModel):
 
 class ContextResponse(BaseModel):
     game_id: int
+    sport: str
     last_n: int
     divisional: bool
     primetime: bool

@@ -68,14 +68,17 @@ class OddsRepository:
         quota_remaining: Optional[int],
     ) -> bool:
         """Save one snapshot, once. Every row of a snapshot shares `observed_at`, so a second
-        parse of the same raw file (a crash before the slot was updated) finds it and stops."""
+        parse of the same raw file (a crash before the slot was updated) finds it and stops.
+        The check is per sport: two sports can be snapshotted in the same second."""
         async with self.session_factory() as session:
             async with session.begin():
                 already = await session.scalar(
                     select(OfferObservation.id)
+                    .join(EventRecord, EventRecord.id == OfferObservation.event_id)
                     .where(
                         OfferObservation.provider == provider,
                         OfferObservation.observed_at == observed_at,
+                        EventRecord.sport == sport.value,
                     )
                     .limit(1)
                 )
@@ -86,13 +89,18 @@ class OddsRepository:
                 )
                 return True
 
-    async def latest_snapshot_at(self, provider: str) -> Optional[datetime]:
+    async def latest_snapshot_at(
+        self, provider: str, sport: Optional[Sport] = None
+    ) -> Optional[datetime]:
         async with self.session_factory() as session:
-            return await session.scalar(
-                select(func.max(OfferObservation.observed_at)).where(
-                    OfferObservation.provider == provider
-                )
+            query = select(func.max(OfferObservation.observed_at)).where(
+                OfferObservation.provider == provider
             )
+            if sport is not None:
+                query = query.join(EventRecord, EventRecord.id == OfferObservation.event_id).where(
+                    EventRecord.sport == sport.value
+                )
+            return await session.scalar(query)
 
     async def latest_quota(self, provider: str) -> Optional[int]:
         """The provider's own remaining-credits figure from its newest response that had one."""

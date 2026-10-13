@@ -153,8 +153,11 @@ export function LinesPanel({ game }: { game: SlateGame }) {
 
       {data.books.length === 0 ? (
         <p className="empty-grid">
-          No sportsbook prices for this game yet. They arrive with the Tuesday, Thursday, Saturday and
-          Sunday snapshots and shortly before kickoff{data.can_refresh ? ", or use Refresh prices" : ""}.
+          No sportsbook prices for this game yet. They arrive with{" "}
+          {game.sport === "nba"
+            ? "the 10am snapshot and shortly before the first and last tips of the night"
+            : "the Tuesday, Thursday, Saturday and Sunday snapshots and shortly before kickoff"}
+          {data.can_refresh ? ", or use Refresh prices" : ""}.
         </p>
       ) : (
         <>
