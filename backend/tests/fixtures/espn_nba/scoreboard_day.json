@@ -1,0 +1,289 @@
+{
+ "events": [
+  {
+   "id": "401810433",
+   "date": "2026-01-15T19:00Z",
+   "name": "Memphis Grizzlies at Orlando Magic",
+   "shortName": "MEM VS ORL",
+   "season": {
+    "year": 2026,
+    "type": 2,
+    "slug": "regular-season"
+   },
+   "competitions": [
+    {
+     "id": "401810433",
+     "date": "2026-01-15T19:00Z",
+     "neutralSite": true,
+     "status": {
+      "type": {
+       "id": "3",
+       "name": "STATUS_FINAL",
+       "state": "post",
+       "completed": true,
+       "description": "Final",
+       "detail": "Final",
+       "shortDetail": "Final"
+      }
+     },
+     "venue": {
+      "id": "11593",
+      "fullName": "Uber Arena",
+      "indoor": true
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "118",
+       "team": {
+        "id": "19",
+        "abbreviation": "ORL",
+        "displayName": "Orlando Magic"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "111",
+       "team": {
+        "id": "29",
+        "abbreviation": "MEM",
+        "displayName": "Memphis Grizzlies"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401810434",
+   "date": "2026-01-16T00:00Z",
+   "name": "Phoenix Suns at Detroit Pistons",
+   "shortName": "PHX @ DET",
+   "season": {
+    "year": 2026,
+    "type": 2,
+    "slug": "regular-season"
+   },
+   "competitions": [
+    {
+     "id": "401810434",
+     "date": "2026-01-16T00:00Z",
+     "neutralSite": false,
+     "status": {
+      "type": {
+       "id": "3",
+       "name": "STATUS_FINAL",
+       "state": "post",
+       "completed": true,
+       "description": "Final",
+       "detail": "Final",
+       "shortDetail": "Final"
+      }
+     },
+     "venue": {
+      "id": "5404",
+      "fullName": "Little Caesars Arena",
+      "indoor": true
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "108",
+       "team": {
+        "id": "8",
+        "abbreviation": "DET",
+        "displayName": "Detroit Pistons"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "105",
+       "team": {
+        "id": "21",
+        "abbreviation": "PHX",
+        "displayName": "Phoenix Suns"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401810435",
+   "date": "2026-01-16T00:30Z",
+   "name": "Boston Celtics at Miami Heat",
+   "shortName": "BOS @ MIA",
+   "season": {
+    "year": 2026,
+    "type": 2,
+    "slug": "regular-season"
+   },
+   "competitions": [
+    {
+     "id": "401810435",
+     "date": "2026-01-16T00:30Z",
+     "neutralSite": false,
+     "status": {
+      "type": {
+       "id": "3",
+       "name": "STATUS_FINAL",
+       "state": "post",
+       "completed": true,
+       "description": "Final",
+       "detail": "Final",
+       "shortDetail": "Final"
+      }
+     },
+     "venue": {
+      "id": "3438",
+      "fullName": "Kaseya Center",
+      "indoor": true
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "114",
+       "team": {
+        "id": "14",
+        "abbreviation": "MIA",
+        "displayName": "Miami Heat"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "119",
+       "team": {
+        "id": "2",
+        "abbreviation": "BOS",
+        "displayName": "Boston Celtics"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401810439",
+   "date": "2026-01-16T03:00Z",
+   "name": "New York Knicks at Golden State Warriors",
+   "shortName": "NY @ GS",
+   "season": {
+    "year": 2026,
+    "type": 2,
+    "slug": "regular-season"
+   },
+   "competitions": [
+    {
+     "id": "401810439",
+     "date": "2026-01-16T03:00Z",
+     "neutralSite": false,
+     "status": {
+      "type": {
+       "id": "1",
+       "name": "STATUS_SCHEDULED",
+       "state": "pre",
+       "completed": false
+      }
+     },
+     "venue": {
+      "id": "6270",
+      "fullName": "Chase Center",
+      "indoor": true
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "id": "9",
+        "abbreviation": "GS",
+        "displayName": "Golden State Warriors"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "id": "18",
+        "abbreviation": "NY",
+        "displayName": "New York Knicks"
+       }
+      }
+     ],
+     "odds": [
+      {
+       "provider": {
+        "id": "100",
+        "name": "DraftKings"
+       },
+       "spread": 1.5,
+       "overUnder": 42.5,
+       "pointSpread": {
+        "home": {
+         "open": {
+          "line": "-6.5",
+          "odds": "-110"
+         },
+         "close": {
+          "line": "-7.5",
+          "odds": "-108"
+         }
+        },
+        "away": {
+         "open": {
+          "line": "+6.5",
+          "odds": "-110"
+         },
+         "close": {
+          "line": "+7.5",
+          "odds": "-112"
+         }
+        }
+       },
+       "total": {
+        "over": {
+         "open": {
+          "line": "o226.5",
+          "odds": "-110"
+         },
+         "close": {
+          "line": "o228.5",
+          "odds": "-110"
+         }
+        },
+        "under": {
+         "open": {
+          "line": "u226.5",
+          "odds": "-110"
+         },
+         "close": {
+          "line": "u228.5",
+          "odds": "-110"
+         }
+        }
+       },
+       "moneyline": {
+        "home": {
+         "open": {
+          "odds": "-260"
+         },
+         "close": {
+          "odds": "-300"
+         }
+        },
+        "away": {
+         "open": {
+          "odds": "+215"
+         },
+         "close": {
+          "odds": "+250"
+         }
+        }
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

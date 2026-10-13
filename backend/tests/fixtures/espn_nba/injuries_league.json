@@ -1,0 +1,175 @@
+{
+ "injuries": [
+  {
+   "id": "1",
+   "displayName": "Atlanta Hawks",
+   "injuries": [
+    {
+     "id": "534140",
+     "status": "Day-To-Day",
+     "date": "2026-10-12T21:36Z",
+     "athlete": {
+      "displayName": "Keshon Gilbert",
+      "position": {
+       "abbreviation": "G"
+      }
+     },
+     "details": {
+      "type": "Knee",
+      "detail": "Tendinitis",
+      "returnDate": "2026-10-16"
+     }
+    },
+    {
+     "id": "534138",
+     "status": "Day-To-Day",
+     "date": "2026-10-12T21:33Z",
+     "athlete": {
+      "displayName": "Aaron Wiggins",
+      "position": {
+       "abbreviation": "G"
+      }
+     },
+     "details": {
+      "type": "Rest",
+      "returnDate": "2026-10-16"
+     }
+    },
+    {
+     "id": "534137",
+     "status": "Day-To-Day",
+     "date": "2026-10-12T21:33Z",
+     "athlete": {
+      "displayName": "Onyeka Okongwu",
+      "position": {
+       "abbreviation": "F"
+      }
+     },
+     "details": {
+      "type": "Rest",
+      "returnDate": "2026-10-16"
+     }
+    },
+    {
+     "id": "x1",
+     "status": "Out",
+     "date": "2026-10-12T10:00Z",
+     "athlete": {
+      "displayName": "Sample Guard",
+      "position": {
+       "abbreviation": "PG"
+      }
+     },
+     "details": {
+      "type": "Knee",
+      "detail": "Sprain"
+     }
+    }
+   ]
+  },
+  {
+   "id": "2",
+   "displayName": "Boston Celtics",
+   "injuries": [
+    {
+     "id": "533935",
+     "status": "Day-To-Day",
+     "date": "2026-10-11T02:21Z",
+     "athlete": {
+      "displayName": "Luka Garza",
+      "position": {
+       "abbreviation": "C"
+      }
+     },
+     "details": {
+      "type": "Nose",
+      "returnDate": "2026-10-14"
+     }
+    },
+    {
+     "id": "533908",
+     "status": "Day-To-Day",
+     "date": "2026-10-10T23:58Z",
+     "athlete": {
+      "displayName": "Devin Carter",
+      "position": {
+       "abbreviation": "G"
+      }
+     },
+     "details": {
+      "type": "Illness",
+      "returnDate": "2026-10-14"
+     }
+    },
+    {
+     "id": "533907",
+     "status": "Day-To-Day",
+     "date": "2026-10-10T23:57Z",
+     "athlete": {
+      "displayName": "Ron Harper Jr.",
+      "position": {
+       "abbreviation": "G"
+      }
+     },
+     "details": {
+      "type": "Shoulder",
+      "detail": "Soreness",
+      "returnDate": "2026-10-14"
+     }
+    }
+   ]
+  },
+  {
+   "id": "14",
+   "displayName": "Miami Heat",
+   "injuries": [
+    {
+     "id": "534127",
+     "status": "Day-To-Day",
+     "date": "2026-10-12T20:34Z",
+     "athlete": {
+      "displayName": "Pelle Larsson",
+      "position": {
+       "abbreviation": "G"
+      }
+     },
+     "details": {
+      "type": "Illness",
+      "returnDate": "2026-10-14"
+     }
+    },
+    {
+     "id": "533942",
+     "status": "Day-To-Day",
+     "date": "2026-10-11T02:48Z",
+     "athlete": {
+      "displayName": "Kylor Kelley",
+      "position": {
+       "abbreviation": "C"
+      }
+     },
+     "details": {
+      "type": "Calf",
+      "detail": "Strain",
+      "returnDate": "2026-10-14"
+     }
+    },
+    {
+     "id": "-57824",
+     "status": "Day-To-Day",
+     "date": "2026-10-10T22:35Z",
+     "athlete": {
+      "displayName": "Bam Adebayo",
+      "position": {
+       "abbreviation": "C"
+      }
+     },
+     "details": {
+      "type": "Rest",
+      "returnDate": "2026-10-14"
+     }
+    }
+   ]
+  }
+ ]
+}

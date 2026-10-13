@@ -8,7 +8,7 @@ Verified 2026-10-11:
 """
 
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Optional
 
 import httpx
@@ -16,7 +16,7 @@ import httpx
 from app.ingest.records import GameRecord, InjuryRecord, LineRecord
 
 SITE_API = "https://site.api.espn.com/apis/site/v2/sports"
-LEAGUE_PATHS = {"nfl": "football/nfl"}
+LEAGUE_PATHS = {"nfl": "football/nfl", "nba": "basketball/nba"}
 SEASON_TYPES = {1: "PRE", 2: "REG", 3: "POST"}
 _STATES = {"pre": "scheduled", "in": "in_progress", "post": "final"}
 _SPECIAL_STATUSES = {"STATUS_POSTPONED": "postponed", "STATUS_CANCELED": "canceled"}
@@ -157,6 +157,15 @@ async def fetch_scoreboard(
     if week is not None:
         params["week"] = str(week)
     response = await http.get(f"{SITE_API}/{LEAGUE_PATHS[sport]}/scoreboard", params=params)
+    response.raise_for_status()
+    return response.json()
+
+
+async def fetch_scoreboard_day(http: httpx.AsyncClient, sport: str, day: date) -> dict:
+    """One day's games (ESPN's day is the US Eastern date), for sports with no weeks."""
+    response = await http.get(
+        f"{SITE_API}/{LEAGUE_PATHS[sport]}/scoreboard", params={"dates": day.strftime("%Y%m%d")}
+    )
     response.raise_for_status()
     return response.json()
 
