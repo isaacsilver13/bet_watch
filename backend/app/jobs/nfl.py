@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.ingest.espn import fetch_scoreboard, fetch_summary, parse_pickcenter, parse_scoreboard
 from app.ingest.nflverse import GAMES_CSV_URL, parse_games_csv
-from app.ingest.seed import seed_teams
+from app.ingest.seed import SEEDS, seed_teams
 from app.jobs.runner import JobContext
 from app.jobs.slots import Slot, daily_slot, hourly_slots
 from app.storage.games_repository import GamesRepository
@@ -27,7 +27,8 @@ class SeedJob:
         return []  # manual only: python -m app.jobs seed
 
     async def run(self, ctx: JobContext, slot: Slot) -> str:
-        await seed_teams(ctx.session_factory, NFL)
+        for sport, path in SEEDS.items():  # every sport the app tracks
+            await seed_teams(ctx.session_factory, sport, path)
         return "done"
 
 
