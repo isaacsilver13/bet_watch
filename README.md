@@ -55,6 +55,26 @@ context, not betting advice. Sources: nflverse team stats (daily), ESPN injuries
 Open-Meteo forecasts (every 3 hours); all free, none need a key. The scheduled `run-due` picks
 up `team_stats`, `injuries` and `weather` on its own; `team_stats_history` is manual.
 
+### Prices, bets and closing-line value
+
+The matchup page opens on a **Lines** tab: every tracked book's spread, total and moneyline
+(DraftKings, FanDuel, BetMGM, BetRivers, theScore Bet), the consensus with the vig removed, the best
+price on each side, a line-movement chart, and Kalshi when it is enabled. Click any price to open
+the bet form pre-filled; the fee (FanDuel and DraftKings charge one under $25 and $50) is worked out
+and stored with the bet. `/bets` shows profit after fees, ROI, and how often you beat the closing
+line, by book, sport or market. `/ops` shows whether the scheduled jobs are actually running.
+
+Prices come from The Odds API and cost credits, so they are **off until you turn them on**: set
+`PROVIDER_MODE=live`, `ODDS_PROVIDER=the_odds_api` and a free `THE_ODDS_API_KEY` in `.env`. Then
+`run-due` takes a snapshot at 10am CT on Tuesday, Thursday, Saturday and Sunday and 30 minutes
+before each kickoff time. Each call is 3 credits and covers every game, so a week is about 30
+credits against the free 500 a month. Every paid response is written to `data/raw/` (git-ignored)
+before it is parsed, so a crash never costs a second call, and the job stops at the
+`PROVIDER_MIN_QUOTA_REMAINING` floor. The Lines tab's *Refresh prices* button makes one extra
+call on demand (at most one per 10 minutes). The pre-kickoff snapshot is the closing line used
+for CLV; ESPN's close is the fallback. `grade_bets` runs hourly: it settles bets on final games
+and copies the closing line onto bets whose game has started. Context, not betting advice.
+
 ## Run locally
 
 ### Backend
