@@ -100,7 +100,7 @@ function clvText(bet: Bet): string {
   return `${parts.join(" · ") || "—"} (${bet.close_source})`;
 }
 
-function BetRow({ bet, onVoid }: { bet: Bet; onVoid: (id: number) => void }) {
+function BetRow({ bet, onVoid, busy }: { bet: Bet; onVoid: (id: number) => void; busy: boolean }) {
   const score = bet.game.home_score !== null && bet.game.away_score !== null
     ? ` · ${bet.game.away} ${bet.game.away_score}–${bet.game.home_score} ${bet.game.home}`
     : "";
@@ -117,7 +117,16 @@ function BetRow({ bet, onVoid }: { bet: Bet; onVoid: (id: number) => void }) {
       <td>{clvText(bet)}</td>
       <td>
         {bet.status === "open" && (
-          <button aria-label={`Void ${describeBet(bet)}`} className="text-button" onClick={() => onVoid(bet.id)} type="button">
+          <button
+            aria-label={`Void ${describeBet(bet)}`}
+            className="text-button"
+            disabled={busy}
+            onClick={() => {
+              // A voided bet cannot be reopened, so ask first.
+              if (window.confirm(`Void ${describeBet(bet)} (${formatMoney(bet.stake)})? This cannot be undone.`)) onVoid(bet.id);
+            }}
+            type="button"
+          >
             Void
           </button>
         )}
@@ -208,7 +217,7 @@ export function BetsPage() {
               </tr>
             </thead>
             <tbody>
-              {bets.data.map((bet) => <BetRow bet={bet} key={bet.id} onVoid={(id) => voiding.mutate(id)} />)}
+              {bets.data.map((bet) => <BetRow bet={bet} busy={voiding.isPending} key={bet.id} onVoid={(id) => voiding.mutate(id)} />)}
             </tbody>
           </table>
         </div>

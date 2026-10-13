@@ -71,7 +71,7 @@ before each kickoff time. Each call is 3 credits and covers every game, so a wee
 credits against the free 500 a month. Every paid response is written to `data/raw/` (git-ignored)
 before it is parsed, so a crash never costs a second call, and the job stops at the
 `PROVIDER_MIN_QUOTA_REMAINING` floor. The Lines tab's *Refresh prices* button makes one extra
-call on demand (at most one per 10 minutes). The pre-kickoff snapshot is the closing line used
+call on demand (at most one per 10 minutes; it only shows for requests from this PC unless `ADMIN_REFRESH_SECRET` is set). The pre-kickoff snapshot is the closing line used
 for CLV; ESPN's close is the fallback. `grade_bets` runs hourly: it settles bets on final games
 and copies the closing line onto bets whose game has started. Context, not betting advice.
 

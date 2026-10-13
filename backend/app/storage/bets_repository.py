@@ -104,6 +104,10 @@ class BetsRepository:
             for name in ("venue", "line", "price_american", "stake", "note"):
                 if fields.get(name) is not None:
                     setattr(bet, name, fields[name])
+            if fields.get("line") is not None or fields.get("price_american") is not None:
+                # A copied closing line was measured against the old number: refill it next run.
+                bet.close_line = bet.close_price = bet.close_source = None
+                bet.clv_points = bet.clv_prob = None
             if fields.get("fee") is not None:
                 bet.fee = fields["fee"]
             elif "venue" in fields or "stake" in fields:

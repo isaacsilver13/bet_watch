@@ -61,6 +61,7 @@ describe("BetsPage", () => {
     vi.mocked(fetchBets).mockReset();
     vi.mocked(fetchSummary).mockReset();
     vi.mocked(voidBet).mockReset();
+    vi.restoreAllMocks();
   });
 
   it("shows profit after fees, ROI, CLV and the breakdown", async () => {
@@ -113,7 +114,19 @@ describe("BetsPage", () => {
     await waitFor(() => expect(fetchSummary).toHaveBeenLastCalledWith("market", expect.anything()));
   });
 
+  it("asks before voiding, and a declined confirmation changes nothing", async () => {
+    vi.mocked(fetchBets).mockResolvedValue(BETS);
+    vi.mocked(fetchSummary).mockResolvedValue(SUMMARY);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Void DEN -2.5 -110" }));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("DEN -2.5 -110"));
+    expect(voidBet).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
   it("voids an open bet and refreshes", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     vi.mocked(fetchBets).mockResolvedValue(BETS);
     vi.mocked(fetchSummary).mockResolvedValue(SUMMARY);
     vi.mocked(voidBet).mockResolvedValue(bet({ id: 3, status: "void" }));

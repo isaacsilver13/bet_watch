@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 REFRESH_COOLDOWN = timedelta(minutes=10)  # one bulk call covers every game; asking again is waste
 HISTORY_DAYS = 21
 HISTORY_POINTS = 60
+LOOPBACK = ("127.0.0.1", "::1")
 
 
 @dataclass
@@ -53,6 +54,19 @@ def get_runtime() -> Runtime:
         Path(settings.raw_data_dir),
         settings.provider_min_quota_remaining,
     )
+
+
+def _may_spend(request: Request) -> bool:
+    """Admin by the usual rule, or, when no admin secret is set, the owner's own machine.
+
+    The browser never holds an admin token, and this app is local-only: its Vite dev proxy
+    reaches the API from loopback. A request relayed by anything else carries a forwarding
+    header (or a non-loopback address) and still needs the token."""
+    if routes._is_admin(request):
+        return True
+    forwarded = request.headers.get("x-forwarded-for") or request.headers.get("fly-client-ip")
+    local = request.client is not None and request.client.host in LOOPBACK
+    return not routes.settings.admin_refresh_secret and local and not forwarded
 
 
 def _best(best: dict[str, BestPrice]) -> dict[str, BestView]:
@@ -80,8 +94,16 @@ async def get_lines(
     async with session_factory() as session:
         game = await _game_row(session, game_id)
         slate_game = (await load_slate_games(session, Game.id == game_id))[0]
-        offers = await side_offers(session, game, since=now - timedelta(days=HISTORY_DAYS))
-    is_admin = routes._is_admin(request)
+        kickoff = aware(game.start_time)
+        # The odds feed also returns games in progress: once this game has started, the
+        # prices shown stop at kickoff instead of following the live market.
+        offers = await side_offers(
+            session,
+            game,
+            since=now - timedelta(days=HISTORY_DAYS),
+            until=kickoff if now >= kickoff else None,
+        )
+    is_admin = _may_spend(request)
     quota = await OddsRepository(session_factory).latest_quota(PROVIDER) if is_admin else None
 
     latest = max((o.observed_at for o in offers), default=None)
@@ -125,7 +147,7 @@ async def refresh_game(
         raise HTTPException(
             409, detail="Refresh needs PROVIDER_MODE=live and THE_ODDS_API_KEY in .env."
         )
-    if not routes._is_admin(request):
+    if not _may_spend(request):
         raise HTTPException(403, detail="Refresh needs the admin token.")
     repo = OddsRepository(session_factory)
     latest = await repo.latest_snapshot_at(PROVIDER)

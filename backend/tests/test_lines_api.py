@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import httpx
+import pytest
 from app.api import routes
 from app.api.lines import Runtime, get_runtime
 from app.api.slate import get_now, get_session_factory
@@ -52,7 +53,7 @@ def _runtime(tmp_path, live=True, quota="450") -> Runtime:
     return Runtime(client if live else None, tmp_path / "raw", 5)
 
 
-def _client(tmp_path, snapshots=(), runtime=None, now=NOW) -> TestClient:
+def _client(tmp_path, snapshots=(), runtime=None, now=NOW, client=None) -> TestClient:
     ODDS_CALLS.clear()
 
     async def setup():
@@ -70,7 +71,7 @@ def _client(tmp_path, snapshots=(), runtime=None, now=NOW) -> TestClient:
     app.dependency_overrides[get_session_factory] = lambda: factory
     app.dependency_overrides[get_now] = lambda: now
     app.dependency_overrides[get_runtime] = lambda: runtime or _runtime(tmp_path)
-    return TestClient(app)
+    return TestClient(app, client=client) if client else TestClient(app)
 
 
 def _factory(tmp_path):
@@ -202,3 +203,52 @@ def test_a_failed_upstream_call_is_a_502_and_is_logged(tmp_path) -> None:
                 ProviderRefreshRun.status == "failed"))
 
     assert asyncio.run(failures()) == 1
+
+
+def test_after_kickoff_in_game_prices_do_not_become_the_latest_lines(tmp_path) -> None:
+    """The odds feed also returns games in progress, so a later snapshot holds in-game prices."""
+    kickoff = datetime(2026, 10, 16, 0, 15, tzinfo=timezone.utc)
+    during = kickoff + timedelta(minutes=40)
+    pregame = kickoff - timedelta(minutes=20)
+    client = _client(
+        tmp_path, [(pregame, _body()), (during, _body(spread_shift=9.0))],
+        now=kickoff + timedelta(hours=2),
+    )
+    body = client.get(f"/api/v1/games/{_den_id(tmp_path)}/lines").json()
+    assert body["snapshot_at"].startswith("2026-10-15T23:55:00")  # the pre-kick snapshot
+    assert body["consensus"]["spread_home"] == 1.5
+    assert [p["spread_home"] for p in body["history"]] == [1.5]
+
+
+def _live_without_a_secret(monkeypatch) -> None:
+    live = replace(routes.settings, provider_mode=ProviderMode.LIVE, admin_refresh_secret=None)
+    monkeypatch.setattr(routes, "settings", live)
+
+
+def test_the_owners_own_machine_can_refresh_live_prices_without_a_token(
+    tmp_path, monkeypatch
+) -> None:
+    """The browser never holds an admin token, so a local-only app must trust its own host."""
+    _live_without_a_secret(monkeypatch)
+    client = _client(tmp_path, client=("127.0.0.1", 5000))
+    game_id = _den_id(tmp_path)
+    lines = client.get(f"/api/v1/games/{game_id}/lines").json()
+    assert lines["can_refresh"] is True
+    assert client.post(f"/api/v1/games/{game_id}/refresh").json()["refreshed"] is True
+    assert len(ODDS_CALLS) == 1
+
+
+@pytest.mark.parametrize(
+    ("host", "headers"),
+    [("203.0.113.9", {}), ("127.0.0.1", {"x-forwarded-for": "203.0.113.9"})],
+)
+def test_other_hosts_and_forwarded_requests_still_cannot_spend(
+    tmp_path, monkeypatch, host, headers
+) -> None:
+    _live_without_a_secret(monkeypatch)
+    client = _client(tmp_path, client=(host, 5000))
+    game_id = _den_id(tmp_path)
+    lines = client.get(f"/api/v1/games/{game_id}/lines", headers=headers).json()
+    assert lines["can_refresh"] is False and lines["quota_remaining"] is None
+    assert client.post(f"/api/v1/games/{game_id}/refresh", headers=headers).status_code == 403
+    assert ODDS_CALLS == []

@@ -161,3 +161,20 @@ def test_the_job_settles_and_fills_and_is_registered(tmp_path, monkeypatch) -> N
 
     asyncio.run(scenario())
     assert any(isinstance(job, GradeBetsJob) for job in JOBS)
+
+
+def test_correcting_an_open_bet_after_its_close_was_copied_refreshes_the_clv(tmp_path) -> None:
+    async def scenario() -> None:
+        factory, games, repo, game_id, _ = await _setup(tmp_path)
+        await _snapshot(factory, tmp_path / "raw", KICKOFF - timedelta(minutes=20))
+        bet_id = await repo.create(_bet(game_id, line=2.5), AFTER)
+        await fill_clv(factory, AFTER)
+        assert (await repo.get(bet_id)).bet.clv_points == 1.0  # DEN +2.5 against a close of +1.5
+        await repo.patch(bet_id, BetPatch(line=3.5))  # it was really +3.5
+        corrected = (await repo.get(bet_id)).bet
+        cleared = (corrected.close_source, corrected.clv_points, corrected.clv_prob)
+        assert cleared == (None, None, None)
+        assert await fill_clv(factory, AFTER) == 1
+        assert (await repo.get(bet_id)).bet.clv_points == 2.0  # recomputed from the new line
+
+    asyncio.run(scenario())
