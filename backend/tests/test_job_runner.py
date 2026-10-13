@@ -2,7 +2,14 @@ import asyncio
 from datetime import datetime, timezone
 
 import httpx
-from app.jobs.runner import HEARTBEAT_PROVIDER, JobContext, run_due
+from app.jobs.runner import (
+    HEARTBEAT_PROVIDER,
+    JobContext,
+    SlotInfo,
+    get_slot_info,
+    run_due,
+    update_slot,
+)
 from app.jobs.slots import CENTRAL, Slot, daily_slot, hourly_slots
 from app.storage.models import JobSlot, ProviderRefreshRun
 from sqlalchemy import select
@@ -127,5 +134,73 @@ def test_heartbeat_recorded(tmp_path) -> None:
                 ProviderRefreshRun.provider == HEARTBEAT_PROVIDER
             ))
         assert beat is not None and beat.status == "succeeded"
+
+    asyncio.run(scenario())
+
+
+class PlannedJob(FakeJob):
+    """A job whose slots need the database, so it plans them asynchronously."""
+
+    def slots(self, now):
+        raise AssertionError("plan_slots must be used instead")
+
+    async def plan_slots(self, ctx, now):
+        return [Slot("fake:planned", now.replace(minute=0), now.replace(minute=59))]
+
+
+def test_plan_slots_replaces_slots(tmp_path) -> None:
+    async def scenario() -> None:
+        ctx = await _ctx(tmp_path)
+        job = PlannedJob(["done"])
+        assert await run_due([job], ctx, NOW) == {"fake:planned": "done"}
+
+    asyncio.run(scenario())
+
+
+def test_slot_extras_survive_the_state_save(tmp_path) -> None:
+    async def scenario() -> None:
+        ctx = await _ctx(tmp_path)
+
+        class Saves(FakeJob):
+            async def run(self, ctx, slot):
+                await update_slot(ctx, "fake", slot.key, state="raw_saved", raw_path="a/b.gz")
+                return "partial"
+
+        await run_due([Saves([])], ctx, NOW)
+        info = await get_slot_info(ctx, "fake", "fake:now")
+        assert (info.state, info.attempts, info.raw_path) == ("partial", 1, "a/b.gz")
+        assert (await get_slot_info(ctx, "fake", "nope")) == SlotInfo("pending", 0, None, None)
+
+    asyncio.run(scenario())
+
+
+def test_raw_saved_slot_still_runs_after_its_window_closes(tmp_path) -> None:
+    """We already paid for that response; the job must get to parse it, not mark it missed."""
+
+    async def scenario() -> None:
+        ctx = await _ctx(tmp_path)
+        past = Slot("fake:08", datetime(2026, 10, 11, 8, tzinfo=CENTRAL),
+                    datetime(2026, 10, 11, 9, tzinfo=CENTRAL))
+        await update_slot(ctx, "fake", "fake:08", state="raw_saved", raw_path="x.gz")
+        job = FakeJob(["done"], slots=[past])
+        assert await run_due([job], ctx, NOW) == {"fake:08": "done"}
+        assert job.calls == 1
+
+    asyncio.run(scenario())
+
+
+def test_a_failed_parse_leaves_the_paid_response_raw_saved_past_the_attempt_cap(tmp_path) -> None:
+    async def scenario() -> None:
+        ctx = await _ctx(tmp_path)
+
+        class ParseCrash(FakeJob):
+            async def run(self, ctx, slot):
+                await update_slot(ctx, "fake", slot.key, state="raw_saved", raw_path="a/b.gz")
+                raise ValueError("bad payload")
+
+        job = ParseCrash([], max_attempts=1)
+        assert await run_due([job], ctx, NOW) == {"fake:now": "raw_saved"}
+        info = await get_slot_info(ctx, "fake", "fake:now")
+        assert (info.state, info.attempts, info.raw_path) == ("raw_saved", 1, "a/b.gz")
 
     asyncio.run(scenario())
