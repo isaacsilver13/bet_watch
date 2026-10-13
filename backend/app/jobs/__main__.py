@@ -12,10 +12,12 @@ import httpx
 from app.config import load_settings
 from app.jobs.context import CONTEXT_JOBS
 from app.jobs.nfl import JOBS as NFL_JOBS
+from app.jobs.odds import OddsSnapshotJob
 from app.jobs.runner import JobContext, run_due, run_once
+from app.providers.the_odds_api.client import TheOddsApiClient
 from app.storage.database import create_engine, create_session_factory
 
-JOBS = [*NFL_JOBS, *CONTEXT_JOBS]
+JOBS = [*NFL_JOBS, *CONTEXT_JOBS, OddsSnapshotJob()]
 
 
 async def main(argv: Optional[list[str]] = None) -> int:
@@ -31,7 +33,10 @@ async def main(argv: Optional[list[str]] = None) -> int:
             timeout=settings.provider_timeout_seconds,
             follow_redirects=True,
         ) as http:
-            ctx = JobContext(create_session_factory(engine), http, Path(settings.raw_data_dir))
+            odds = TheOddsApiClient.from_settings(settings)  # None unless live with a key
+            ctx = JobContext(
+                create_session_factory(engine), http, Path(settings.raw_data_dir), settings, odds
+            )
             if args.command == "run-due":
                 for key, state in (await run_due(JOBS, ctx, datetime.now(timezone.utc))).items():
                     print(f"{state:>13}  {key}")
