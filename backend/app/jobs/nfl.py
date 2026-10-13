@@ -91,8 +91,12 @@ class EspnScoreboardJob:
 
 
 class EspnClosesJob:
-    name = "espn_closes"
     max_attempts = 3
+
+    def __init__(
+        self, sport: str = NFL, name: str = "espn_closes", lookback: timedelta = CLOSE_LOOKBACK
+    ) -> None:
+        self.sport, self.name, self.lookback = sport, name, lookback
 
     def slots(self, now: datetime) -> list[Slot]:
         return daily_slot(self.name, now)
@@ -100,24 +104,26 @@ class EspnClosesJob:
     async def run(self, ctx: JobContext, slot: Slot) -> str:
         repo = GamesRepository(ctx.session_factory)
         now = _now()
-        missing = await repo.finals_missing_close(NFL, since=now - CLOSE_LOOKBACK)
+        missing = await repo.finals_missing_close(self.sport, since=now - self.lookback)
         saved = 0
         for espn_id in missing:
-            lines = parse_pickcenter(await fetch_summary(ctx.http, NFL, espn_id))
+            lines = parse_pickcenter(await fetch_summary(ctx.http, self.sport, espn_id))
             if lines and await repo.save_lines(espn_id, "espn", lines, now):
                 saved += 1
         return "done" if saved == len(missing) else "partial"
 
 
 class LinkEventsJob:
-    name = "link_events"
     max_attempts = 2
+
+    def __init__(self, sport: str = NFL, name: str = "link_events") -> None:
+        self.sport, self.name = sport, name
 
     def slots(self, now: datetime) -> list[Slot]:
         return hourly_slots(self.name, now)
 
     async def run(self, ctx: JobContext, slot: Slot) -> str:
-        result = await GamesRepository(ctx.session_factory).link_events(NFL)
+        result = await GamesRepository(ctx.session_factory).link_events(self.sport)
         if result.unlinked:
             logger.warning("link_events: unlinked odds events %s", result.unlinked)
         return "done"
