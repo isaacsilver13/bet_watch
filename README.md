@@ -55,6 +55,8 @@ context, not betting advice. Sources: nflverse team stats (daily), ESPN injuries
 Open-Meteo forecasts (every 3 hours); all free, none need a key. The scheduled `run-due` picks
 up `team_stats`, `injuries` and `weather` on its own; `team_stats_history` is manual.
 
+**Official injury reports.** `nfl_injuries_official` reads nflverse's injury file (daily, and again at 18:00 Central on Wednesday to Friday) once the file has reached the week about to be played, and `nba_injuries_official` reads the league's injury-report PDF every hour from 10:00 to 22:00 Central (the newest of the last four quarter hours; this is why the project depends on `pypdf`). Each source keeps its own snapshots and the matchup page merges them by player: the league's report wins and ESPN fills in the rest. For the NBA, `nba_player_stats` (daily, from stats.nba.com) finds each team's three players with the most minutes per game (last season's until a team has played 10 games); the slate card and the Injuries tab flag a team whose star is Out or Doubtful and mark one who is Questionable. A game that carries bets shows "N bets · M open" and its profit after fees once settled. Run `alembic upgrade head` once for the new `player_season_stats` table.
+
 ### Prices, bets and closing-line value
 
 The matchup page opens on a **Lines** tab: every tracked book's spread, total and moneyline
