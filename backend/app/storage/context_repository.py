@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.analytics.injuries import name_key
@@ -52,6 +52,7 @@ class WeatherTarget:
 
 
 OFFICIAL_SOURCES = ("nba_official", "nflverse")  # these beat ESPN for a player both list
+OFFICIAL_MAX_AGE = timedelta(days=7)  # NFL reports land weekly; the NBA's every hour
 UPCOMING_GRACE = timedelta(hours=12)
 
 
@@ -74,12 +75,21 @@ async def merged_injuries(
 
     ESPN, nflverse (NFL) and the league's PDF (NBA) each write their own snapshots (rows that
     share observed_at). The official reports beat ESPN for any player they list; ESPN fills in
-    the rest. Scoped to the sport: another sport's newer report must not hide this one."""
+    the rest. Scoped to the sport: another sport's newer report must not hide this one. An
+    official report older than OFFICIAL_MAX_AGE is ignored: the jobs write nothing out of season,
+    so last season's final report would otherwise outrank ESPN's current one for months."""
     newest = (
         await session.execute(
             select(Injury.source, func.max(Injury.observed_at))
             .join(Team, Team.id == Injury.team_id)
-            .where(Team.sport == sport, Injury.observed_at <= as_of)
+            .where(
+                Team.sport == sport,
+                Injury.observed_at <= as_of,
+                or_(
+                    Injury.source.not_in(OFFICIAL_SOURCES),
+                    Injury.observed_at >= as_of - OFFICIAL_MAX_AGE,
+                ),
+            )
             .group_by(Injury.source)
         )
     ).all()

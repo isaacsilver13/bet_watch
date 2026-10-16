@@ -117,6 +117,25 @@ def test_the_cutoff_ignores_reports_after_it_whatever_their_source(tmp_path) -> 
     asyncio.run(scenario())
 
 
+def test_an_old_official_report_no_longer_beats_espn(tmp_path) -> None:
+    async def scenario() -> None:
+        repo, ids, _ = await _setup(tmp_path)
+        # the league's last report of the old season is still the newest official snapshot
+        await repo.save_official_injuries("nba", "nba_official", [
+            official("Washington Wizards", "Trae Young", "Out", "Right Knee; MCL Sprain"),
+            official("Washington Wizards", "Alex Sarr", "Out", "Hamstring"),
+        ], T1)
+        later = T1 + timedelta(days=120)
+        await repo.save_injuries("nba", [espn(WAS, "Trae Young", "Day-To-Day", "PG")], later)
+        was = ids[("nba", "WAS")]
+        by_team, observed = await repo.injury_snapshot("nba", {was}, later + timedelta(hours=1))
+        [row] = by_team[was]  # Sarr's four-month-old "Out" is gone, and so is Young's
+        assert (row.player, row.status, row.source) == ("Trae Young", "Day-To-Day", "espn")
+        assert observed == later
+
+    asyncio.run(scenario())
+
+
 def test_a_suffix_does_not_split_one_player_in_two(tmp_path) -> None:
     async def scenario() -> None:
         repo, ids, _ = await _setup(tmp_path)
