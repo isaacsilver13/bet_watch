@@ -1,4 +1,4 @@
-import type { SlateGame, SlateTeam } from "./slate";
+import type { SlateGame, SlateTeam, StarFlag } from "./slate";
 
 export interface Tally { win: number; loss: number; push: number }
 /** For over/under, win = over and loss = under. */
@@ -12,6 +12,11 @@ export interface Situation {
   travel_miles: number | null;
   tz_crossed: number | null;
   previous_opponent: string | null;
+  // NBA only
+  back_to_back?: boolean;
+  three_in_four?: boolean;
+  four_in_six?: boolean;
+  games_last_7?: number | null;
 }
 
 export interface Injury {
@@ -20,6 +25,7 @@ export interface Injury {
   status: string;
   detail: string | null;
   reported_at: string | null;
+  star?: boolean;
 }
 
 export interface QbFlag { player: string; status: string }
@@ -31,6 +37,7 @@ export interface TeamContext {
   situation: Situation;
   injuries: Injury[];
   qb_flag: QbFlag | null;
+  star_flag?: StarFlag | null;
 }
 
 export interface Meeting {
@@ -46,6 +53,7 @@ export interface Meeting {
 
 export interface ContextResponse {
   game_id: number;
+  sport: string;
   last_n: number;
   divisional: boolean;
   primetime: boolean;
@@ -79,7 +87,13 @@ export function formatTally(tally: Tally): string {
   return tally.push ? `${base}-${tally.push}` : base;
 }
 
-export interface MetricRow { key: string; label: string; decimals: number; signed?: boolean }
+export interface MetricRow {
+  key: string;
+  label: string;
+  decimals: number;
+  signed?: boolean;
+  percent?: boolean;  // the wire value is a fraction: 0.503 shows as 50.3%
+}
 
 /** Display order and formatting. Ranks already account for which direction is better. */
 export const METRIC_ROWS: MetricRow[] = [
@@ -99,10 +113,30 @@ export const METRIC_ROWS: MetricRow[] = [
   { key: "sacks_pg", label: "Sacks / game", decimals: 2 },
 ];
 
+/** NBA team ratings and four factors, from stats.nba.com game logs. */
+export const NBA_METRIC_ROWS: MetricRow[] = [
+  { key: "net_rtg", label: "Net rating", decimals: 1, signed: true },
+  { key: "off_rtg", label: "Offensive rating", decimals: 1 },
+  { key: "def_rtg", label: "Defensive rating (points allowed per 100)", decimals: 1 },
+  { key: "pace", label: "Pace (possessions per 48)", decimals: 1 },
+  { key: "efg", label: "Effective FG%", decimals: 1, percent: true },
+  { key: "tov_pct", label: "Turnover rate", decimals: 1, percent: true },
+  { key: "oreb_pct", label: "Offensive rebound rate", decimals: 1, percent: true },
+  { key: "ftr", label: "Free-throw rate", decimals: 1, percent: true },
+  { key: "opp_efg", label: "Opponent effective FG%", decimals: 1, percent: true },
+  { key: "opp_tov_pct", label: "Opponent turnover rate", decimals: 1, percent: true },
+  { key: "opp_oreb_pct", label: "Opponent offensive rebound rate", decimals: 1, percent: true },
+  { key: "opp_ftr", label: "Opponent free-throw rate", decimals: 1, percent: true },
+];
+
+export const metricRowsFor = (sport: string): MetricRow[] =>
+  sport === "nba" ? NBA_METRIC_ROWS : METRIC_ROWS;
+
 export function formatMetric(metric: Metric | undefined, row: MetricRow): string {
   if (!metric) return "—";
   const sign = row.signed && metric.value > 0 ? "+" : "";
-  return `${sign}${metric.value.toFixed(row.decimals)} (#${metric.rank} of ${metric.of})`;
+  const text = row.percent ? `${(metric.value * 100).toFixed(row.decimals)}%` : `${sign}${metric.value.toFixed(row.decimals)}`;
+  return `${text} (#${metric.rank} of ${metric.of})`;
 }
 
 /** Hours of age after which a panel is flagged stale, by data_as_of key. */

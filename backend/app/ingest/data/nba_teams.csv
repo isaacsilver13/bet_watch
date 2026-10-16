@@ -1,0 +1,31 @@
+abbr,name,espn_id,conference,venue_espn_id,venue_name,lat,lon,tz,roof,aliases
+ATL,Atlanta Hawks,1,East Southeast,1827,State Farm Arena,33.7573,-84.3963,America/New_York,dome,
+BKN,Brooklyn Nets,17,East Atlantic,3559,Barclays Center,40.6826,-73.9754,America/New_York,dome,Nets
+BOS,Boston Celtics,2,East Atlantic,1824,TD Garden,42.3663,-71.0622,America/New_York,dome,
+CHA,Charlotte Hornets,30,East Southeast,1893,Spectrum Center,35.2251,-80.8392,America/New_York,dome,
+CHI,Chicago Bulls,4,East Central,1847,United Center,41.8807,-87.6742,America/Chicago,dome,
+CLE,Cleveland Cavaliers,5,East Central,3417,Rocket Arena,41.4965,-81.6882,America/New_York,dome,
+DAL,Dallas Mavericks,6,West Southwest,516,American Airlines Center,32.7905,-96.8103,America/Chicago,dome,
+DEN,Denver Nuggets,7,West Northwest,892,Ball Arena,39.7487,-105.0077,America/Denver,dome,
+DET,Detroit Pistons,8,East Central,5404,Little Caesars Arena,42.3410,-83.0550,America/New_York,dome,
+GSW,Golden State Warriors,9,West Pacific,6270,Chase Center,37.7680,-122.3877,America/Los_Angeles,dome,GS|Warriors
+HOU,Houston Rockets,10,West Southwest,1394,Toyota Center (Houston),29.7508,-95.3621,America/Chicago,dome,
+IND,Indiana Pacers,11,East Central,2183,Gainbridge Fieldhouse,39.7639,-86.1555,America/New_York,dome,
+LAC,LA Clippers,12,West Pacific,10642,Intuit Dome,33.9958,-118.3419,America/Los_Angeles,dome,Los Angeles Clippers|Clippers
+LAL,Los Angeles Lakers,13,West Pacific,1841,crypto.com Arena,34.0430,-118.2673,America/Los_Angeles,dome,Los Angeles Lakers|Lakers
+MEM,Memphis Grizzlies,29,West Southwest,1392,FedExForum,35.1382,-90.0506,America/Chicago,dome,
+MIA,Miami Heat,14,East Southeast,3438,Kaseya Center,25.7814,-80.1870,America/New_York,dome,
+MIL,Milwaukee Bucks,15,East Central,5777,Fiserv Forum,43.0451,-87.9172,America/Chicago,dome,
+MIN,Minnesota Timberwolves,16,West Northwest,2029,Target Center,44.9795,-93.2760,America/Chicago,dome,
+NOP,New Orleans Pelicans,3,West Southwest,985,Smoothie King Center,29.9490,-90.0821,America/Chicago,dome,NO
+NYK,New York Knicks,18,East Atlantic,1830,Madison Square Garden,40.7505,-73.9934,America/New_York,dome,NY|Knicks
+OKC,Oklahoma City Thunder,25,West Northwest,2559,Paycom Center,35.4634,-97.5151,America/Chicago,dome,
+ORL,Orlando Magic,19,East Southeast,3432,Kia Center,28.5392,-81.3839,America/New_York,dome,
+PHI,Philadelphia 76ers,20,East Atlantic,1845,Xfinity Mobile Arena,39.9012,-75.1720,America/New_York,dome,76ers|Sixers
+PHX,Phoenix Suns,21,West Pacific,1949,Mortgage Matchup Center,33.4457,-112.0712,America/Phoenix,dome,
+POR,Portland Trail Blazers,22,West Northwest,3423,Moda Center,45.5316,-122.6668,America/Los_Angeles,dome,Trail Blazers|Blazers
+SAC,Sacramento Kings,23,West Pacific,5310,Golden 1 Center,38.5802,-121.4997,America/Los_Angeles,dome,
+SAS,San Antonio Spurs,24,West Southwest,780,Frost Bank Center,29.4270,-98.4375,America/Chicago,dome,SA
+TOR,Toronto Raptors,28,East Atlantic,1838,Scotiabank Arena,43.6435,-79.3791,America/New_York,dome,
+UTA,Utah Jazz,26,West Northwest,3093,Delta Center,40.7683,-111.9011,America/Denver,dome,UTAH
+WAS,Washington Wizards,27,East Southeast,1823,Capital One Arena,38.8981,-77.0209,America/New_York,dome,WSH

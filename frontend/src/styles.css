@@ -236,7 +236,38 @@ footer { gap: 20px; padding-top: 20px; }
 .slate-card-head h3 a { color: inherit; text-decoration: none; }
 .slate-card-head h3 a:hover { text-decoration: underline; }
 .slate-weather { color: var(--secondary); font-size: 0.8rem; margin: 10px 0 0; }
+.slate-stars { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.star-badge { border: 1px solid transparent; border-radius: 999px; padding: 2px 9px; font-size: 0.75rem; font-weight: 600; }
+.star-badge.out { color: #fecdd3; background: rgba(244,63,94,0.12); border-color: rgba(253,164,175,0.35); }
+.star-badge.questionable { color: #fde68a; background: rgba(251,191,36,0.1); border-color: rgba(251,191,36,0.35); }
+.slate-bets { margin: 10px 0 0; font-size: 0.8rem; }
+.slate-bets a { color: var(--secondary); }
 .injury-grid { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 12px; }
 .injury-list { margin: 0; padding-left: 18px; }
 .injury-list li { margin: 4px 0; }
 select { min-height: 39px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--surface-solid); padding: 8px 11px; }
+
+.lines-table td { min-width: 150px; }
+.price-button { display: block; width: 100%; margin: 2px 0; border: 1px solid var(--line); border-radius: 8px; color: var(--secondary); background: rgba(255,255,255,0.035); padding: 5px 9px; font-family: "DM Mono", monospace; font-size: 0.82rem; text-align: left; }
+.price-button:hover { border-color: var(--secondary); color: var(--ink); background: rgba(165, 180, 252, 0.16); }
+.lines-consensus { margin: 14px 0 6px; font-family: "DM Mono", monospace; font-size: 0.85rem; }
+.best-prices { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; padding: 0; list-style: none; }
+.best-prices li { border: 1px solid rgba(167, 243, 208, 0.4); border-radius: 999px; color: var(--accent); padding: 4px 10px; font-family: "DM Mono", monospace; font-size: 0.75rem; }
+.chart-row { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin: 18px 0; }
+.line-chart { margin: 0; color: var(--secondary); }
+.line-chart svg { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; background: rgba(9, 15, 31, 0.5); }
+.line-chart figcaption { margin-top: 6px; color: var(--muted); font-size: 0.78rem; }
+.reference-lines { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0 0 16px; }
+.reference-lines dt { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.reference-lines dd { margin: 2px 0 0; font-family: "DM Mono", monospace; font-size: 0.85rem; }
+.bet-form { margin-top: 16px; padding: 16px 18px; }
+.bet-fields { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); margin: 12px 0; }
+.bet-fields label { display: grid; gap: 6px; }
+.bet-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.summary-cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 16px 0; }
+.stat { border: 1px solid var(--line); border-radius: 12px; background: rgba(9, 15, 31, 0.5); padding: 12px 14px; }
+.stat dt { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.stat dd { margin: 4px 0 0; font-family: "DM Mono", monospace; font-size: 1.25rem; }
+.stat small { display: block; margin-top: 3px; color: var(--muted); font-size: 0.72rem; }
+.positive { color: var(--accent); }
+.negative { color: var(--danger); }

@@ -55,6 +55,50 @@ context, not betting advice. Sources: nflverse team stats (daily), ESPN injuries
 Open-Meteo forecasts (every 3 hours); all free, none need a key. The scheduled `run-due` picks
 up `team_stats`, `injuries` and `weather` on its own; `team_stats_history` is manual.
 
+**Official injury reports.** `nfl_injuries_official` reads nflverse's injury file (daily, and again at 18:00 Central on Wednesday to Friday) once the file has reached the week about to be played, and `nba_injuries_official` reads the league's injury-report PDF every hour from 10:00 to 22:00 Central (the newest of the last four quarter hours; this is why the project depends on `pypdf`). Each source keeps its own snapshots and the matchup page merges them by player: the league's report wins and ESPN fills in the rest. For the NBA, `nba_player_stats` (daily, from stats.nba.com) finds each team's three players with the most minutes per game (last season's until a team has played 10 games); the slate card and the Injuries tab flag a team whose star is Out or Doubtful and mark one who is Questionable. A game that carries bets shows "N bets · M open" and its profit after fees once settled. Run `alembic upgrade head` once for the new `player_season_stats` table.
+
+### Prices, bets and closing-line value
+
+The matchup page opens on a **Lines** tab: every tracked book's spread, total and moneyline
+(DraftKings, FanDuel, BetMGM, BetRivers, theScore Bet), the consensus with the vig removed, the best
+price on each side, a line-movement chart, and Kalshi when it is enabled. Click any price to open
+the bet form pre-filled; the fee (FanDuel and DraftKings charge one under $25 and $50) is worked out
+and stored with the bet. `/bets` shows profit after fees, ROI, and how often you beat the closing
+line, by book, sport or market. `/ops` shows whether the scheduled jobs are actually running.
+
+Prices come from The Odds API and cost credits, so they are **off until you turn them on**: set
+`PROVIDER_MODE=live`, `ODDS_PROVIDER=the_odds_api` and a free `THE_ODDS_API_KEY` in `.env`. Then
+`run-due` takes a snapshot at 10am CT on Tuesday, Thursday, Saturday and Sunday and 30 minutes
+before each kickoff time. Each call is 3 credits and covers every game, so a week is about 30
+credits against the free 500 a month. Every paid response is written to `data/raw/` (git-ignored)
+before it is parsed, so a crash never costs a second call, and the job stops at the
+`PROVIDER_MIN_QUOTA_REMAINING` floor. The Lines tab's *Refresh prices* button makes one extra
+call on demand (at most one per 10 minutes; it only shows for requests from this PC unless `ADMIN_REFRESH_SECRET` is set). The pre-kickoff snapshot is the closing line used
+for CLV; ESPN's close is the fallback. `grade_bets` runs hourly: it settles bets on final games
+and copies the closing line onto bets whose game has started. Context, not betting advice.
+
+### NBA
+
+The NBA lives next to the NFL: `/nba` is a day-by-day slate (with previous and next game day), and
+each matchup page has Lines, Records, Ratings, Schedule, Injuries and Head-to-head. Ratings are
+season-to-date offensive, defensive and net rating, pace and the four factors with league ranks;
+Schedule counts back-to-backs, third games in four days, fourth in six, and travel. Everything is
+computed only from games before tip-off, and ATS and O/U use ESPN's closing line (DraftKings).
+
+1. `python -m app.jobs seed` seeds the NBA teams along with the NFL's.
+2. `python -m app.jobs nba_history` loads the season so far: ESPN day by day, then each finished
+   game's closing line. It takes a few minutes and is free (no key).
+3. `run-due` then keeps it current: `nba_scoreboard` (hourly), `nba_closes` (daily),
+   `nba_team_stats` (daily, from stats.nba.com), `nba_injuries` (10:00, 16:00 and 22:00 Central) and
+   `nba_link_events`.
+
+NBA prices use the same Odds API key and the same credit pool. With `PROVIDER_MODE=live`,
+`odds_snapshot_nba` takes a snapshot at 10am Central every day and shortly before the first and
+the last tip of each night (one call, 3 credits, covers every game), so about 9 credits a day.
+Games that tip between those two get ESPN's close for CLV instead of a multi-book consensus. In
+October through February, with the NFL's roughly 30 credits a week, the two sports use about 400 of
+the free 500 credits a month; `PROVIDER_MIN_QUOTA_REMAINING` still stops everything at the floor.
+
 ## Run locally
 
 ### Backend

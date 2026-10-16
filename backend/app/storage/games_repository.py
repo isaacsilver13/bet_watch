@@ -24,6 +24,9 @@ LINE_FIELDS = (
 )
 
 
+MAX_EVENT_GAP = timedelta(hours=36)
+
+
 def aware(value: datetime) -> datetime:
     """SQLite hands back naive datetimes; everything we store is UTC."""
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
@@ -40,6 +43,14 @@ class UpsertResult:
 class LinkResult:
     linked: int = 0
     unlinked: list[str] = field(default_factory=list)
+    superseded: list[str] = field(default_factory=list)  # replaced by a newer, re-timed event
+
+
+@dataclass(frozen=True)
+class ScheduledGame:
+    id: int
+    start_time: datetime
+    event_id: Optional[str]
 
 
 async def alias_map(session: AsyncSession, sport: str) -> dict[str, int]:
@@ -189,9 +200,29 @@ class GamesRepository:
             )
             return list(rows.all())
 
-    async def link_events(
-        self, sport: str, max_gap: timedelta = timedelta(hours=36)
-    ) -> LinkResult:
+    async def scheduled_games(
+        self,
+        sport: str,
+        start: datetime,
+        end: datetime,
+        statuses: tuple[str, ...] = ("scheduled", "in_progress"),  # not yet over
+    ) -> list[ScheduledGame]:
+        async with self.session_factory() as session:
+            rows = await session.scalars(
+                select(Game)
+                .where(
+                    Game.sport == sport,
+                    Game.status.in_(statuses),
+                    Game.start_time >= start,
+                    Game.start_time < end,
+                )
+                .order_by(Game.start_time, Game.id)
+            )
+            return [ScheduledGame(g.id, aware(g.start_time), g.event_id) for g in rows.all()]
+
+    async def link_events(self, sport: str, max_gap: timedelta = MAX_EVENT_GAP) -> LinkResult:
+        """Point each game at its odds event. A feed that re-times a flexed game mints a new
+        event id: the newer event takes the game over and the older is reported as superseded."""
         result = LinkResult()
         async with self.session_factory() as session, session.begin():
             aliases = await alias_map(session, sport)
@@ -204,33 +235,75 @@ class GamesRepository:
                 )
             ).all()
             for event in events:
-                home_id = aliases.get(normalize_name(event.home_team))
-                away_id = aliases.get(normalize_name(event.away_team))
-                matches = []
-                if home_id is not None and away_id is not None:
-                    # Some feeds flip home/away for neutral-site games, so accept either order.
-                    candidates = (
-                        await session.scalars(
-                            select(Game).where(
-                                Game.sport == sport,
-                                Game.event_id.is_(None),
-                                (
-                                    (Game.home_team_id == home_id) & (Game.away_team_id == away_id)
-                                )
-                                | (
-                                    (Game.home_team_id == away_id) & (Game.away_team_id == home_id)
-                                ),
-                            )
-                        )
-                    ).all()
-                    matches = [
-                        game
-                        for game in candidates
-                        if abs(aware(game.start_time) - aware(event.start_time)) <= max_gap
-                    ]
-                if len(matches) == 1:
-                    matches[0].event_id = event.id
+                matches = await games_for_event(session, aliases, sport, event, max_gap)
+                if len(matches) != 1:
+                    result.unlinked.append(event.id)
+                    continue
+                game = matches[0]
+                if game.event_id is None:
+                    game.event_id = event.id
+                    result.linked += 1
+                    continue
+                current = await session.get(EventRecord, game.event_id)
+                if current is None or aware(event.last_observed_at) > aware(
+                    current.last_observed_at
+                ):
+                    game.event_id = event.id
                     result.linked += 1
                 else:
-                    result.unlinked.append(event.id)
+                    result.superseded.append(event.id)
         return result
+
+
+async def games_for_event(
+    session: AsyncSession,
+    aliases: dict[str, int],
+    sport: str,
+    event: EventRecord,
+    max_gap: timedelta,
+) -> list[Game]:
+    home_id = aliases.get(normalize_name(event.home_team))
+    away_id = aliases.get(normalize_name(event.away_team))
+    if home_id is None or away_id is None:
+        return []
+    # Some feeds flip home/away for neutral-site games, so accept either order.
+    candidates = (
+        await session.scalars(
+            select(Game).where(
+                Game.sport == sport,
+                ((Game.home_team_id == home_id) & (Game.away_team_id == away_id))
+                | ((Game.home_team_id == away_id) & (Game.away_team_id == home_id)),
+            )
+        )
+    ).all()
+    return [
+        game
+        for game in candidates
+        if abs(aware(game.start_time) - aware(event.start_time)) <= max_gap
+    ]
+
+
+async def related_event_ids(
+    session: AsyncSession, game: Game, max_gap: timedelta = MAX_EVENT_GAP
+) -> list[str]:
+    """Every odds event for this game's two teams near its kickoff, newest first: a re-timed
+    game has more than one, and its line history spans all of them."""
+    aliases = await alias_map(session, game.sport)
+    wanted = {game.home_team_id, game.away_team_id}
+    kickoff = aware(game.start_time)
+    events = (
+        await session.scalars(
+            select(EventRecord)
+            .where(
+                EventRecord.sport == game.sport,
+                EventRecord.start_time >= kickoff - max_gap,
+                EventRecord.start_time <= kickoff + max_gap,
+            )
+            .order_by(EventRecord.last_observed_at.desc(), EventRecord.id)
+        )
+    ).all()
+    return [
+        event.id
+        for event in events
+        if {aliases.get(normalize_name(n)) for n in (event.home_team, event.away_team)} == wanted
+    ]

@@ -36,7 +36,7 @@ class TheOddsApiProvider:
         comparisons: list[EventComparison] = []
         for requested_sport in sports:
             payload = await self.client.fetch_odds(requested_sport)
-            sport_comparisons = self._normalize_events(payload, requested_sport)
+            sport_comparisons = self.normalize_events(payload, requested_sport)
             if include_player_props:
                 if event_id is not None:
                     # One upstream request per *requested* event, not per event in the sport.
@@ -85,13 +85,15 @@ class TheOddsApiProvider:
 
         return list(await asyncio.gather(*(fetch_one(comparison) for comparison in comparisons)))
 
-    def _normalize_events(
-        self, payload: list[dict[str, Any]], sport: Sport
+    @classmethod
+    def normalize_events(
+        cls, payload: list[dict[str, Any]], sport: Sport, observed_at: Optional[datetime] = None
     ) -> list[EventComparison]:
-        observed_at = datetime.now(timezone.utc)
+        """`observed_at` is the snapshot time: re-parsing a saved file stamps rows the same."""
+        observed_at = observed_at or datetime.now(timezone.utc)
         comparisons: list[EventComparison] = []
         for raw_event in payload:
-            event_id = f"{self.name}:{raw_event['id']}"
+            event_id = f"{cls.name}:{raw_event['id']}"
             event = Event(
                 id=event_id,
                 sport=sport,
@@ -100,12 +102,13 @@ class TheOddsApiProvider:
                 away_team=raw_event["away_team"],
                 start_time=raw_event["commence_time"],
             )
-            offers = self._normalize_offers(raw_event, event_id, observed_at)
+            offers = cls._normalize_offers(raw_event, event_id, observed_at)
             comparisons.append(EventComparison(event=event, offers=offers))
         return comparisons
 
+    @classmethod
     def _normalize_offers(
-        self, raw_event: dict[str, Any], event_id: str, observed_at: datetime
+        cls, raw_event: dict[str, Any], event_id: str, observed_at: datetime
     ) -> list[Offer]:
         offers: list[Offer] = []
         for bookmaker in raw_event.get("bookmakers", []):
@@ -122,7 +125,7 @@ class TheOddsApiProvider:
                     offers.append(
                         Offer(
                             event_id=event_id,
-                            provider=self.name,
+                            provider=cls.name,
                             bookmaker=bookmaker.get("title", bookmaker["key"]),
                             market_type=market_type,
                             selection=outcome.get("name", ""),

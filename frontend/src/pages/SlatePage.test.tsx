@@ -22,7 +22,7 @@ function slate(week: number, withGames = true): SlateResponse {
     sport: "nfl", season: 2026, season_type: "REG", week,
     weeks: [5, 6, 7].map((w) => ({ season_type: "REG", week: w })),
     games: withGames ? [{
-      id: 1, espn_id: "401872995", season: 2026, season_type: "REG", week,
+      id: 1, sport: "nfl", espn_id: "401872995", season: 2026, season_type: "REG", week,
       start_time: "2026-10-16T00:15:00Z", status: "scheduled",
       home: { id: 10, abbr: "DEN", name: "Denver Broncos" },
       away: { id: 26, abbr: "SEA", name: "Seattle Seahawks" },
@@ -80,6 +80,12 @@ describe("SlatePage", () => {
     vi.mocked(fetchSlate).mockResolvedValue(slate(6, false));
     renderAt("/nfl");
     expect(await screen.findByText("No games loaded for this week yet.")).toBeInTheDocument();
+  });
+
+  it("links across to the NBA slate", async () => {
+    vi.mocked(fetchSlate).mockResolvedValue(slate(6));
+    renderAt("/nfl");
+    expect(await screen.findByRole("link", { name: "NBA" })).toHaveAttribute("href", "/nba");
   });
 
   it("shows the API error message", async () => {

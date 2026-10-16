@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel
@@ -31,8 +31,25 @@ class WeatherView(BaseModel):
     fetched_at: datetime
 
 
+class StarFlagView(BaseModel):
+    out: list[str]  # stars who are Out or Doubtful
+    questionable: list[str]
+
+
+class SlateStars(BaseModel):
+    home: StarFlagView
+    away: StarFlagView
+
+
+class BetBadge(BaseModel):
+    total: int
+    open: int
+    net: Optional[float]  # profit after fees over settled bets; null while none is settled
+
+
 class SlateGame(BaseModel):
     id: int
+    sport: str
     espn_id: str
     season: int
     season_type: str
@@ -51,11 +68,23 @@ class SlateGame(BaseModel):
     total_move: Optional[float]
     odds_event_id: Optional[str]
     weather: Optional[WeatherView] = None  # outdoor games only
+    star: Optional[SlateStars] = None  # an upcoming NBA game with a star out or questionable
+    bets: Optional[BetBadge] = None  # present only when the game carries a bet
 
 
 class WeekRef(BaseModel):
     season_type: str
     week: int
+
+
+class DaySlateResponse(BaseModel):
+    """A sport with no weeks (the NBA): one Eastern calendar day of games."""
+
+    sport: str
+    date: date
+    previous: Optional[date]  # the nearest earlier day with games
+    next: Optional[date]  # the nearest later day with games
+    games: list[SlateGame]
 
 
 class SlateResponse(BaseModel):

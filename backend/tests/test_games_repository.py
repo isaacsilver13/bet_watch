@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from app.ingest.espn import parse_pickcenter, parse_scoreboard
 from app.ingest.records import GameRecord, LineRecord
 from app.ingest.seed import seed_teams
-from app.storage.games_repository import GamesRepository
+from app.storage.games_repository import GamesRepository, related_event_ids
 from app.storage.models import EventRecord, Game, GameLine, Team, Venue
 from sqlalchemy import select
 
@@ -173,5 +173,54 @@ def test_quarterbacks_are_stored_and_a_later_espn_upsert_does_not_blank_them(tmp
         async with factory() as session:
             game = await session.scalar(select(Game).where(Game.espn_id == "401872995"))
         assert (game.home_qb, game.away_qb) == ("Bo Nix", "Sam Darnold")
+
+    asyncio.run(scenario())
+
+
+def _event(event_id, kickoff, observed, home="Denver Broncos", away="Seattle Seahawks"):
+    return EventRecord(id=event_id, sport="nfl", league="NFL", home_team=home, away_team=away,
+                       start_time=kickoff, first_observed_at=observed, last_observed_at=observed)
+
+
+def test_a_flexed_game_relinks_to_the_newer_event_and_the_old_one_stays_retired(tmp_path) -> None:
+    """The odds feed re-times a flexed game, which changes its canonical event id."""
+
+    async def scenario() -> None:
+        factory, repo = await _seeded(tmp_path)
+        await repo.upsert_games("nfl", "espn", _records(), NOW)
+        kickoff = datetime(2026, 10, 16, 0, 15, tzinfo=timezone.utc)
+        async with factory() as session, session.begin():
+            session.add(_event("event:old", kickoff, NOW))
+        assert (await repo.link_events("nfl")).linked == 1
+        async with factory() as session, session.begin():
+            session.add(
+                _event("event:flexed", kickoff + timedelta(hours=3), NOW + timedelta(hours=2))
+            )
+        result = await repo.link_events("nfl")
+        assert (result.linked, result.unlinked, result.superseded) == (1, [], [])
+        async with factory() as session:
+            den = await session.scalar(select(Game).where(Game.espn_id == "401872995"))
+        assert den.event_id == "event:flexed"
+        # The retired event is no longer reported, linked, or allowed to steal the game back.
+        again = await repo.link_events("nfl")
+        assert (again.linked, again.unlinked, again.superseded) == (0, [], ["event:old"])
+        async with factory() as session:
+            den = await session.scalar(select(Game).where(Game.espn_id == "401872995"))
+            related = await related_event_ids(session, den)
+        assert related == ["event:flexed", "event:old"]  # newest first; history spans both
+
+    asyncio.run(scenario())
+
+
+def test_scheduled_games_lists_only_unplayed_games_in_the_window(tmp_path) -> None:
+    async def scenario() -> None:
+        factory, repo = await _seeded(tmp_path)
+        await repo.upsert_games("nfl", "espn", _records(), NOW)
+        games = await repo.scheduled_games("nfl", NOW, NOW + timedelta(days=7))
+        kickoff = datetime(2026, 10, 16, 0, 15, tzinfo=timezone.utc)
+        assert [g.start_time for g in games] == [kickoff]
+        assert games[0].event_id is None
+        later = (NOW + timedelta(days=7), NOW + timedelta(days=9))
+        assert await repo.scheduled_games("nfl", *later) == []
 
     asyncio.run(scenario())

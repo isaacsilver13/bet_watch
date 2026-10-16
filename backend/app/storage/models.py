@@ -232,3 +232,49 @@ class Weather(Base):
     wind_mph: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     precip_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     conditions: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+
+
+class PlayerSeasonStat(Base):
+    """A player's games and minutes per game for one season (stats.nba.com). The three players
+    with the most minutes on a team are its stars. `player` is the normalized name key."""
+
+    __tablename__ = "player_season_stats"
+    __table_args__ = (
+        UniqueConstraint("sport", "season", "team_id", "player", name="uq_player_season_stats"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sport: Mapped[str] = mapped_column(String(20), nullable=False)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
+    player: Mapped[str] = mapped_column(String(160), nullable=False)
+    games: Mapped[int] = mapped_column(Integer, nullable=False)
+    minutes_pg: Mapped[float] = mapped_column(Float, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class Bet(Base):
+    """One single bet. `line` is the bet side's own number (home -2.5, away +2.5, over 44.5)."""
+
+    __tablename__ = "bets"
+    __table_args__ = (Index("ix_bets_game", "game_id"), Index("ix_bets_status", "status"))
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), nullable=False)
+    placed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    venue: Mapped[str] = mapped_column(String(20), nullable=False)
+    market: Mapped[str] = mapped_column(String(12), nullable=False)  # spread|total|moneyline
+    selection: Mapped[str] = mapped_column(String(8), nullable=False)  # home|away|over|under
+    line: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    price_american: Mapped[int] = mapped_column(Integer, nullable=False)
+    stake: Mapped[float] = mapped_column(Float, nullable=False)
+    fee: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)  # fixed at entry
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="open")
+    payout: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # total returned
+    settled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    close_line: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    close_price: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # no-vig fair price
+    close_source: Mapped[Optional[str]] = mapped_column(String(12), nullable=True)  # odds_api|espn
+    clv_points: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    clv_prob: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    note: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)

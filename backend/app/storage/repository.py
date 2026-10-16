@@ -51,78 +51,150 @@ class OddsRepository:
         started_at: datetime,
         completed_at: datetime,
         sport: Optional[Sport] = None,
+        quota_remaining: Optional[int] = None,
     ) -> int:
         async with self.session_factory() as session:
             async with session.begin():
-                refresh = ProviderRefreshRun(
-                    provider=provider,
-                    sport=sport.value if sport else None,
-                    status="succeeded",
-                    started_at=started_at,
-                    completed_at=completed_at,
+                return await self._store(
+                    session, provider, comparisons, started_at, completed_at, sport, quota_remaining
                 )
-                session.add(refresh)
 
-                for comparison in comparisons:
-                    event = comparison.event
-                    existing_event = await session.get(EventRecord, event.id)
-                    if existing_event is None:
-                        session.add(
-                            EventRecord(
-                                id=event.id,
-                                sport=event.sport.value,
-                                league=event.league,
-                                home_team=event.home_team,
-                                away_team=event.away_team,
-                                start_time=event.start_time,
-                                first_observed_at=completed_at,
-                                last_observed_at=completed_at,
-                            )
-                        )
-                    else:
-                        existing_event.last_observed_at = completed_at
-
-                    mapping = await session.scalar(
-                        select(ProviderEventMapping).where(
-                            ProviderEventMapping.provider == provider,
-                            ProviderEventMapping.provider_event_id == event.id,
-                        )
+    async def record_snapshot(
+        self,
+        provider: str,
+        sport: Sport,
+        comparisons: Sequence[EventComparison],
+        observed_at: datetime,
+        quota_remaining: Optional[int],
+    ) -> bool:
+        """Save one snapshot, once. Every row of a snapshot shares `observed_at`, so a second
+        parse of the same raw file (a crash before the slot was updated) finds it and stops.
+        The check is per sport: two sports can be snapshotted in the same second."""
+        async with self.session_factory() as session:
+            async with session.begin():
+                already = await session.scalar(
+                    select(OfferObservation.id)
+                    .join(EventRecord, EventRecord.id == OfferObservation.event_id)
+                    .where(
+                        OfferObservation.provider == provider,
+                        OfferObservation.observed_at == observed_at,
+                        EventRecord.sport == sport.value,
                     )
-                    if mapping is None:
-                        session.add(
-                            ProviderEventMapping(
-                                provider=provider,
-                                provider_event_id=event.id,
-                                event_id=event.id,
-                                first_seen_at=completed_at,
-                                last_seen_at=completed_at,
-                            )
-                        )
-                    else:
-                        mapping.last_seen_at = completed_at
+                    .limit(1)
+                )
+                if already is not None:
+                    return False
+                await self._store(
+                    session, provider, comparisons, observed_at, observed_at, sport, quota_remaining
+                )
+                return True
 
-                    for offer in comparison.offers:
-                        session.add(
-                            OfferObservation(
-                                event_id=event.id,
-                                provider=offer.provider,
-                                bookmaker=offer.bookmaker,
-                                market_type=offer.market_type.value,
-                                selection=offer.selection,
-                                line=offer.line,
-                                price_american=offer.price_american,
-                                price_decimal=offer.price_decimal,
-                                player_name=offer.player_name,
-                                provider_offer_id=offer.provider_offer_id,
-                                provider_updated_at=offer.provider_updated_at,
-                                observed_at=offer.observed_at,
-                                deep_link=offer.deep_link,
-                                status=offer.status.value,
-                            )
-                        )
+    async def latest_snapshot_at(
+        self, provider: str, sport: Optional[Sport] = None
+    ) -> Optional[datetime]:
+        async with self.session_factory() as session:
+            query = select(func.max(OfferObservation.observed_at)).where(
+                OfferObservation.provider == provider
+            )
+            if sport is not None:
+                query = query.join(EventRecord, EventRecord.id == OfferObservation.event_id).where(
+                    EventRecord.sport == sport.value
+                )
+            return await session.scalar(query)
 
-                await session.flush()
-                return refresh.id
+    async def latest_quota(self, provider: str) -> Optional[int]:
+        """The provider's own remaining-credits figure from its newest response that had one."""
+        async with self.session_factory() as session:
+            return await session.scalar(
+                select(ProviderRefreshRun.quota_remaining)
+                .where(
+                    ProviderRefreshRun.provider == provider,
+                    ProviderRefreshRun.quota_remaining.is_not(None),
+                )
+                .order_by(ProviderRefreshRun.completed_at.desc(), ProviderRefreshRun.id.desc())
+                .limit(1)
+            )
+
+    async def _store(
+        self,
+        session: AsyncSession,
+        provider: str,
+        comparisons: Sequence[EventComparison],
+        started_at: datetime,
+        completed_at: datetime,
+        sport: Optional[Sport],
+        quota_remaining: Optional[int],
+    ) -> int:
+        refresh = ProviderRefreshRun(
+            provider=provider,
+            sport=sport.value if sport else None,
+            status="succeeded",
+            started_at=started_at,
+            completed_at=completed_at,
+            quota_remaining=quota_remaining,
+        )
+        session.add(refresh)
+
+        for comparison in comparisons:
+            event = comparison.event
+            existing_event = await session.get(EventRecord, event.id)
+            if existing_event is None:
+                session.add(
+                    EventRecord(
+                        id=event.id,
+                        sport=event.sport.value,
+                        league=event.league,
+                        home_team=event.home_team,
+                        away_team=event.away_team,
+                        start_time=event.start_time,
+                        first_observed_at=completed_at,
+                        last_observed_at=completed_at,
+                    )
+                )
+            else:
+                existing_event.last_observed_at = completed_at
+
+            mapping = await session.scalar(
+                select(ProviderEventMapping).where(
+                    ProviderEventMapping.provider == provider,
+                    ProviderEventMapping.provider_event_id == event.id,
+                )
+            )
+            if mapping is None:
+                session.add(
+                    ProviderEventMapping(
+                        provider=provider,
+                        provider_event_id=event.id,
+                        event_id=event.id,
+                        first_seen_at=completed_at,
+                        last_seen_at=completed_at,
+                    )
+                )
+            else:
+                mapping.last_seen_at = completed_at
+
+            for offer in comparison.offers:
+                session.add(
+                    OfferObservation(
+                        event_id=event.id,
+                        provider=offer.provider,
+                        bookmaker=offer.bookmaker,
+                        market_type=offer.market_type.value,
+                        selection=offer.selection,
+                        line=offer.line,
+                        price_american=offer.price_american,
+                        price_decimal=offer.price_decimal,
+                        player_name=offer.player_name,
+                        provider_offer_id=offer.provider_offer_id,
+                        provider_updated_at=offer.provider_updated_at,
+                        observed_at=offer.observed_at,
+                        deep_link=offer.deep_link,
+                        status=offer.status.value,
+                    )
+                )
+
+        await session.flush()
+        return refresh.id
 
     async def count_observations(self, event_id: Optional[str] = None) -> int:
         async with self.session_factory() as session:
