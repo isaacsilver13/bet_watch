@@ -50,3 +50,16 @@ class InjuryRecord:
     status: str  # Out | Doubtful | Questionable | Injured Reserve | Suspension | ...
     detail: Optional[str]
     reported_at: Optional[datetime]
+
+
+@dataclass(frozen=True)
+class NamedInjury:
+    """An injury from a report that names the team (an alias: a full name, an nflverse code)
+    instead of carrying ESPN's team id."""
+
+    team: str
+    player: str
+    position: Optional[str]
+    status: str  # Out | Doubtful | Questionable | Probable
+    detail: Optional[str]
+    reported_at: Optional[datetime] = None
