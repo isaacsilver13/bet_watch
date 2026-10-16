@@ -290,7 +290,7 @@ async def get_context(
             injuries=[
                 InjuryView(
                     player=i.player, position=i.position, status=i.status, detail=i.detail,
-                    reported_at=aware(i.reported_at) if i.reported_at else None,
+                    reported_at=i.reported_at,
                 )
                 for i in injuries[team.id]
             ],
