@@ -5,10 +5,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from app.ingest.espn import fetch_injuries, parse_injuries
+from app.ingest.nflverse_injuries import INJURIES_URL, parse_injuries_csv
 from app.ingest.nflverse_stats import TEAM_STATS_URL, TeamStatRecord, parse_team_stats_csv
 from app.ingest.open_meteo import fetch_forecast, parse_forecast
 from app.jobs.runner import JobContext
-from app.jobs.slots import Slot, daily_slot, hourly_slots
+from app.jobs.slots import CENTRAL, Slot, daily_slot, hourly_slots
 from app.storage.context_repository import ContextRepository
 from app.storage.games_repository import aware
 
@@ -103,6 +104,42 @@ class InjuriesJob:
         return "done"
 
 
+class NflOfficialInjuriesJob:
+    """nflverse's injury file: the league's game designations and practice reports. It runs with
+    the daily jobs (the slot opens at 08:00 Central, which is the Sunday-morning run) and again
+    on Wednesday to Friday at 18:00, when the week's practice reports land. It writes only once
+    the file has reached the week about to be played: before that the file ends at last week,
+    and last week's statuses must not beat ESPN's current ones."""
+
+    name = "nfl_injuries_official"
+    max_attempts = 3
+
+    def slots(self, now: datetime) -> list[Slot]:
+        slots = daily_slot(self.name, now)
+        if now.astimezone(CENTRAL).weekday() in (2, 3, 4):
+            slots += hourly_slots(self.name, now, first_hour=18, last_hour=18)
+        return slots
+
+    async def run(self, ctx: JobContext, slot: Slot) -> str:
+        now = _now()
+        repo = ContextRepository(ctx.session_factory)
+        upcoming = await repo.upcoming_week(NFL, now)
+        if upcoming is None:
+            return "empty"  # the offseason, or the postseason: ESPN's report covers it
+        season, week = upcoming
+        response = await ctx.http.get(INJURIES_URL.format(season=season))
+        if response.status_code == 404:
+            return "empty"  # the season's file is not published yet
+        response.raise_for_status()
+        file_week, records = parse_injuries_csv(response.text)
+        if file_week != week or not records:
+            return "empty"  # this week's report is not in the file yet
+        result = await repo.save_official_injuries(NFL, "nflverse", records, now)
+        if result.unknown_teams:
+            logger.warning("nfl_injuries_official: unknown teams %s", result.unknown_teams)
+        return "done" if result.saved else "empty"
+
+
 class WeatherJob:
     name = "weather"
     max_attempts = 2
@@ -127,4 +164,10 @@ class WeatherJob:
         return "done" if saved == len(targets) else "partial"
 
 
-CONTEXT_JOBS = [TeamStatsJob(), TeamStatsHistoryJob(), InjuriesJob(), WeatherJob()]
+CONTEXT_JOBS = [
+    TeamStatsJob(),
+    TeamStatsHistoryJob(),
+    InjuriesJob(),
+    NflOfficialInjuriesJob(),
+    WeatherJob(),
+]
