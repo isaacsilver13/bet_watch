@@ -1,0 +1,10 @@
+season,season_type,game_type,team,week,gsis_id,position,full_name,first_name,last_name,report_primary_injury,report_secondary_injury,report_status,practice_primary_injury,practice_secondary_injury,practice_status
+2025,REG,REG,LA,18,00-0036339,G,Kevin Dotson,Kevin,Dotson,Ankle,,Out,Ankle,,Did Not Participate In Practice
+2025,REG,REG,ARI,18,00-0034381,LB,Josh Sweat,Josh,Sweat,Ankle,Knee,Questionable,Ankle,Knee,Limited Participation in Practice
+2025,REG,REG,GB,18,00-0038393,WR,Dontayvion Wicks,Dontayvion,Wicks,Concussion,,Doubtful,Concussion,,Did Not Participate In Practice
+2025,REG,REG,ARI,18,00-0039849,WR,Marvin Harrison Jr.,Marvin,Harrison,,,,Foot,Heel,Did Not Participate In Practice
+2025,REG,REG,BUF,18,00-0034857,QB,Josh Allen,Joshua,Allen,,,,Foot,,Limited Participation in Practice
+2025,REG,REG,ARI,18,00-0026190,DT,Calais Campbell,Calais,Campbell,,,,Not injury related - resting player,,Did Not Participate In Practice
+2025,REG,REG,ARI,18,00-0029316,T,Kelvin Beachum,Kelvin,Beachum,,,,Not injury related - resting player,,Full Participation in Practice
+2025,REG,REG,ARI,17,00-0026190,DT,Calais Campbell,Calais,Campbell,,,,Not injury related - resting player,,Did Not Participate In Practice
+2025,POST,WC,BUF,19,00-0023853,K,Matt Prater,Matthew,Prater,Quadricep,,Questionable,Quadricep,,Did Not Participate In Practice
