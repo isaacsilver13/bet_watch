@@ -89,3 +89,50 @@ async def fetch_team_game_logs(
     )
     response.raise_for_status()
     return response.json()
+
+
+PLAYER_STATS_URL = "https://stats.nba.com/stats/leaguedashplayerstats"
+
+
+@dataclass(frozen=True)
+class PlayerStatRecord:
+    team: str  # the abbreviation stats.nba.com writes, resolved through team_aliases
+    player: str
+    games: int
+    minutes_pg: float
+
+
+def parse_player_stats(payload: Mapping) -> list[PlayerStatRecord]:
+    """One row per player on his current team; a row without a team or minutes is skipped."""
+    return [
+        PlayerStatRecord(
+            row["TEAM_ABBREVIATION"], row["PLAYER_NAME"], int(row["GP"]), float(row["MIN"])
+        )
+        for row in _rows(payload)
+        if row.get("TEAM_ABBREVIATION") and row.get("GP") and row.get("MIN") is not None
+    ]
+
+
+async def fetch_player_stats(http: httpx.AsyncClient, season: int) -> dict:
+    """Per-game numbers for the regular season (verified 2026-10-13: ~580 rows, 180 KB)."""
+    response = await http.get(
+        PLAYER_STATS_URL,
+        params={
+            "MeasureType": "Base",
+            "PerMode": "PerGame",
+            "Season": season_label(season),
+            "SeasonType": "Regular Season",
+            "LeagueID": "00",
+            "LastNGames": 0,
+            "Month": 0,
+            "OpponentTeamID": 0,
+            "PaceAdjust": "N",
+            "Period": 0,
+            "PlusMinus": "N",
+            "Rank": "N",
+        },
+        headers=HEADERS,
+        timeout=60,
+    )
+    response.raise_for_status()
+    return response.json()

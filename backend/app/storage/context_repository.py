@@ -6,17 +6,25 @@ from datetime import datetime, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.analytics.injuries import name_key
 from app.identity import normalize_name
-from app.ingest.nba_stats import GameLogRecord
+from app.ingest.nba_stats import GameLogRecord, PlayerStatRecord
 from app.ingest.nflverse_stats import TeamStatRecord
 from app.ingest.open_meteo import WeatherRecord
 from app.ingest.records import InjuryRecord, NamedInjury
 from app.storage.games_repository import alias_map, aware
-from app.storage.models import Game, Injury, Team, TeamGameStat, Venue, Weather
+from app.storage.models import (
+    Game,
+    Injury,
+    PlayerSeasonStat,
+    Team,
+    TeamGameStat,
+    Venue,
+    Weather,
+)
 
 OUTDOOR_ROOFS = ("outdoors", "retractable")
 EASTERN = ZoneInfo("America/New_York")  # stats.nba.com dates a game by its Eastern date
@@ -210,6 +218,36 @@ class ContextRepository:
                 row.stats = dict(record.stats)
                 row.fetched_at = fetched_at
                 result.saved += 1
+        return result
+
+    async def save_player_stats(
+        self, sport: str, season: int, records: Sequence[PlayerStatRecord], fetched_at: datetime
+    ) -> StatsResult:
+        """Replace the season's minutes with this file's rows. A file that resolves to no team
+        leaves the table alone, so a bad fetch never wipes the stars."""
+        result = StatsResult()
+        async with self.session_factory() as session, session.begin():
+            aliases = await alias_map(session, sport)
+            rows: dict[tuple[int, str], PlayerSeasonStat] = {}
+            for record in records:
+                team_id = aliases.get(normalize_name(record.team))
+                if team_id is None:
+                    if record.team not in result.unmatched:
+                        result.unmatched.append(record.team)
+                    continue
+                key = (team_id, name_key(record.player))
+                rows[key] = PlayerSeasonStat(
+                    sport=sport, season=season, team_id=team_id, player=key[1],
+                    games=record.games, minutes_pg=record.minutes_pg, fetched_at=fetched_at,
+                )
+            if rows:
+                await session.execute(
+                    delete(PlayerSeasonStat).where(
+                        PlayerSeasonStat.sport == sport, PlayerSeasonStat.season == season
+                    )
+                )
+                session.add_all(rows.values())
+            result.saved = len(rows)
         return result
 
     async def injury_snapshot(
