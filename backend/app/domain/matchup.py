@@ -5,7 +5,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from app.domain.slate import TeamView
+from app.domain.slate import StarFlagView, TeamView
 
 
 class TallyView(BaseModel):
@@ -45,6 +45,7 @@ class InjuryView(BaseModel):
     status: str
     detail: Optional[str]
     reported_at: Optional[datetime]
+    star: bool = False  # one of the team's top-minutes players
 
 
 class QbFlagView(BaseModel):
@@ -59,6 +60,7 @@ class TeamContext(BaseModel):
     situation: SituationView
     injuries: list[InjuryView]
     qb_flag: Optional[QbFlagView]
+    star_flag: Optional[StarFlagView] = None
 
 
 class MeetingView(BaseModel):

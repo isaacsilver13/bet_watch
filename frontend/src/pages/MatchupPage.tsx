@@ -164,7 +164,7 @@ function InjuryList({ team }: { team: TeamContext }) {
         <ul className="injury-list">
           {team.injuries.map((injury: Injury) => (
             <li key={`${injury.player}-${injury.status}`}>
-              <strong>{injury.player}</strong>{injury.position ? ` (${injury.position})` : ""} — {injury.status}
+              <strong>{injury.star ? "★ " : ""}{injury.player}</strong>{injury.position ? ` (${injury.position})` : ""} — {injury.status}
               {injury.detail ? `, ${injury.detail}` : ""}
             </li>
           ))}
@@ -176,12 +176,23 @@ function InjuryList({ team }: { team: TeamContext }) {
 
 function InjuriesPanel({ ctx }: { ctx: ContextResponse }) {
   const flags = [ctx.away, ctx.home].filter((team) => team.qb_flag);
+  const starNotices = [ctx.away, ctx.home].flatMap((team) => {
+    const flag = team.star_flag;
+    if (!flag) return [];
+    return [
+      ...(flag.out.length ? [{ key: `${team.team.id}-out`, text: `${team.team.abbr}: Stars out: ${flag.out.join(", ")}` }] : []),
+      ...(flag.questionable.length ? [{ key: `${team.team.id}-q`, text: `${team.team.abbr}: Stars questionable: ${flag.questionable.join(", ")}` }] : []),
+    ];
+  });
   return (
     <>
       {flags.map((team) => (
         <div className="notice" role="status" key={team.team.id}>
           {team.team.abbr}'s last starting QB, {team.qb_flag?.player}, is listed {team.qb_flag?.status}.
         </div>
+      ))}
+      {starNotices.map((notice) => (
+        <div className="notice" role="status" key={notice.key}>{notice.text}</div>
       ))}
       <div className="injury-grid">
         <InjuryList team={ctx.away} />

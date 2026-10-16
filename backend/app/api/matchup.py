@@ -9,7 +9,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.analytics.efficiency import TeamGame, season_efficiency
-from app.analytics.injuries import InjuredPlayer, qb_flag
+from app.analytics.injuries import InjuredPlayer, name_key, qb_flag
 from app.analytics.ratings import RatedGame, season_ratings
 from app.analytics.records import (
     GameResult,
@@ -21,6 +21,7 @@ from app.analytics.records import (
 )
 from app.analytics.schedule_spots import schedule_spot
 from app.analytics.situational import Stop, is_primetime, situation
+from app.analytics.stars import star_flag
 from app.api.slate import get_now, get_session_factory, load_slate_games, pick_lines
 from app.domain.matchup import (
     ContextResponse,
@@ -34,10 +35,11 @@ from app.domain.matchup import (
     TallyView,
     TeamContext,
 )
-from app.domain.slate import SlateGame, TeamView
+from app.domain.slate import SlateGame, StarFlagView, TeamView
 from app.storage.context_repository import ContextRepository
 from app.storage.games_repository import aware
 from app.storage.models import Game, GameLine, Team, TeamGameStat, Venue
+from app.storage.stars import season_stars
 
 router = APIRouter(prefix="/api/v1")
 COUNTED_SEASON_TYPES = ("REG", "POST")  # preseason results are not form
@@ -183,9 +185,10 @@ def _team_game(stat: TeamGameStat, game: Game) -> TeamGame:
 async def get_game(
     game_id: int,
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+    now: datetime = Depends(get_now),
 ) -> SlateGame:
     async with session_factory() as session:
-        games = await load_slate_games(session, Game.id == game_id)
+        games = await load_slate_games(session, Game.id == game_id, now=now)
     if not games:
         raise HTTPException(404, detail="Game not found")
     return games[0]
@@ -233,6 +236,13 @@ async def get_context(
         injuries, injuries_at = await ContextRepository(session_factory).injury_snapshot(
             game.sport, {home.id, away.id}, min(now, kickoff)
         )
+        stars = (
+            await season_stars(
+                session, game.sport, game.season, {home.id, away.id}, min(now, kickoff)
+            )
+            if is_nba
+            else {}
+        )
         previous = {
             team.id: await _previous(session, game.sport, team.id, kickoff) for team in (home, away)
         }
@@ -262,6 +272,11 @@ async def get_context(
             last_qb = prev_game.home_qb if prev_game.home_team_id == team.id else prev_game.away_qb
         injured = [InjuredPlayer(i.player, i.position, i.status) for i in injuries[team.id]]
         flag = qb_flag(last_qb, injured)
+        star_ids = stars.get(team.id, set())
+        star_view = None
+        if is_nba:
+            flagged = star_flag(star_ids, injured)
+            star_view = StarFlagView(out=flagged.out, questionable=flagged.questionable)
         arena = (
             venue.lat if venue else None, venue.lon if venue else None,
             venue.tz if venue else None,
@@ -290,11 +305,12 @@ async def get_context(
             injuries=[
                 InjuryView(
                     player=i.player, position=i.position, status=i.status, detail=i.detail,
-                    reported_at=aware(i.reported_at) if i.reported_at else None,
+                    reported_at=i.reported_at, star=name_key(i.player) in star_ids,
                 )
                 for i in injuries[team.id]
             ],
             qb_flag=QbFlagView(player=flag.player, status=flag.status) if flag else None,
+            star_flag=star_view,
         )
 
     meetings = head_to_head(results, home.id, away.id, kickoff, last_n)

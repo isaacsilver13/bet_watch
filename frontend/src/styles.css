@@ -236,6 +236,12 @@ footer { gap: 20px; padding-top: 20px; }
 .slate-card-head h3 a { color: inherit; text-decoration: none; }
 .slate-card-head h3 a:hover { text-decoration: underline; }
 .slate-weather { color: var(--secondary); font-size: 0.8rem; margin: 10px 0 0; }
+.slate-stars { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.star-badge { border: 1px solid transparent; border-radius: 999px; padding: 2px 9px; font-size: 0.75rem; font-weight: 600; }
+.star-badge.out { color: #fecdd3; background: rgba(244,63,94,0.12); border-color: rgba(253,164,175,0.35); }
+.star-badge.questionable { color: #fde68a; background: rgba(251,191,36,0.1); border-color: rgba(251,191,36,0.35); }
+.slate-bets { margin: 10px 0 0; font-size: 0.8rem; }
+.slate-bets a { color: var(--secondary); }
 .injury-grid { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 12px; }
 .injury-list { margin: 0; padding-left: 18px; }
 .injury-list li { margin: 4px 0; }

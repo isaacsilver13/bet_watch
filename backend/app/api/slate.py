@@ -22,6 +22,7 @@ from app.domain.slate import (
     WeatherView,
     WeekRef,
 )
+from app.storage.badges import bet_badges, slate_stars
 from app.storage.database import create_engine, create_session_factory
 from app.storage.games_repository import LINE_FIELDS, aware
 from app.storage.models import Game, GameLine, Team, Venue, Weather
@@ -95,8 +96,11 @@ async def resolve_week(
     return (row[0], row[1], row[2]) if row else None
 
 
-async def load_slate_games(session: AsyncSession, *conditions: ColumnElement) -> list[SlateGame]:
-    """Games matching `conditions`, in kickoff order, with lines, venue roof and weather."""
+async def load_slate_games(
+    session: AsyncSession, *conditions: ColumnElement, now: Optional[datetime] = None
+) -> list[SlateGame]:
+    """Games matching `conditions`, in kickoff order, with lines, venue roof, weather and the
+    star and bet badges."""
     home, away = aliased(Team), aliased(Team)
     rows = (
         await session.execute(
@@ -120,6 +124,8 @@ async def load_slate_games(session: AsyncSession, *conditions: ColumnElement) ->
             await session.scalars(select(Weather).where(Weather.game_id.in_(game_ids)))
         ).all():
             weather_by_game[weather.game_id] = weather
+    badges = await bet_badges(session, game_ids)
+    flagged = await slate_stars(session, [row[0] for row in rows], now or get_now())
 
     games = []
     for game, home_team, away_team, venue_name, venue_roof in rows:
@@ -162,6 +168,8 @@ async def load_slate_games(session: AsyncSession, *conditions: ColumnElement) ->
                     conditions=weather.conditions,
                     fetched_at=aware(weather.fetched_at),
                 ),
+                star=flagged.get(game.id),
+                bets=badges.get(game.id),
             )
         )
     return games
@@ -201,6 +209,7 @@ async def get_slate(
             Game.season == season,
             Game.season_type == season_type,
             Game.week == week,
+            now=now,
         )
     return SlateResponse(
         sport=sport, season=season, season_type=season_type, week=week, weeks=weeks, games=games
@@ -262,7 +271,7 @@ async def get_day_slate(
             .limit(1)
         )
         games = await load_slate_games(
-            session, Game.sport == sport, Game.start_time >= start, Game.start_time < end
+            session, Game.sport == sport, Game.start_time >= start, Game.start_time < end, now=now
         )
     return DaySlateResponse(
         sport=sport,

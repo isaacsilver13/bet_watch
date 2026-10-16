@@ -25,6 +25,10 @@ export interface SlateWeather {
 
 export type LineKind = "open" | "current" | "close";
 
+export interface StarFlag { out: string[]; questionable: string[] }
+export interface SlateStars { home: StarFlag; away: StarFlag }
+export interface BetBadge { total: number; open: number; net: number | null }
+
 export interface SlateGame {
   id: number;
   sport: string;
@@ -46,6 +50,8 @@ export interface SlateGame {
   total_move: number | null;
   odds_event_id: string | null;
   weather: SlateWeather | null;
+  star?: SlateStars | null;
+  bets?: BetBadge | null;
 }
 
 export interface WeekRef { season_type: string; week: number }
@@ -130,4 +136,24 @@ export function weatherText(game: Pick<SlateGame, "roof" | "weather"> & { sport?
     weather.conditions,
   ].filter((part): part is string => part !== null);
   return parts.length ? `${parts.join(" · ")}${retractable}` : null;
+}
+
+export interface StarBadge { team: string; kind: "out" | "questionable"; names: string[] }
+
+/** The badges a card shows: per team, the stars who are out and then those who are questionable. Away first. */
+export function starBadges(game: Pick<SlateGame, "home" | "away" | "star">): StarBadge[] {
+  if (!game.star) return [];
+  const badges: StarBadge[] = [];
+  for (const side of ["away", "home"] as const) {
+    const flag = game.star[side];
+    if (flag.out.length) badges.push({ team: game[side].abbr, kind: "out", names: flag.out });
+    if (flag.questionable.length) badges.push({ team: game[side].abbr, kind: "questionable", names: flag.questionable });
+  }
+  return badges;
+}
+
+/** "3 bets · 1 open · +$4.50": the profit appears once a bet has settled. */
+export function betsText(bets: BetBadge): string {
+  const net = bets.net === null ? "" : ` · ${bets.net < 0 ? "-" : "+"}$${Math.abs(bets.net).toFixed(2)}`;
+  return `${bets.total} bet${bets.total === 1 ? "" : "s"} · ${bets.open} open${net}`;
 }
