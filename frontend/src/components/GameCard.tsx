@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 
 import { GlassCard } from "./GlassCard";
-import { formatSpread, weatherText, type SlateGame } from "../lib/slate";
+import { betsText, formatSpread, starBadges, weatherText, type SlateGame } from "../lib/slate";
 
 const STATUS_LABELS: Record<string, string> = {
   in_progress: "Live",
@@ -33,6 +33,15 @@ export function GameCard({ game }: { game: SlateGame }) {
         <span className="slate-status">{statusText(game)}</span>
       </div>
       <p className="slate-venue">{game.venue ?? "Venue TBD"}{game.neutral ? " · neutral site" : ""}</p>
+      {starBadges(game).length > 0 && (
+        <p className="slate-stars">
+          {starBadges(game).map((badge) => (
+            <span key={`${badge.team}-${badge.kind}`} className={`star-badge ${badge.kind}`} title={badge.names.join(", ")}>
+              ★ {badge.team} {badge.kind}
+            </span>
+          ))}
+        </p>
+      )}
       <dl className="slate-lines">
         <div><dt>Spread</dt><dd>{formatSpread(game, latest?.spread_home)}</dd></div>
         <div><dt>Total</dt><dd>{latest?.total != null ? `O/U ${latest.total}` : "—"}</dd></div>
@@ -41,6 +50,7 @@ export function GameCard({ game }: { game: SlateGame }) {
       {weatherText(game) && <p className="slate-weather">{weatherText(game)}</p>}
       {game.spread_move ? <p className="slate-move">Home line {game.spread_move > 0 ? "+" : ""}{game.spread_move} since open</p> : null}
       {latest && <p className="slate-source">{latest.source} {game.lines.close ? "close" : "current"} line</p>}
+      {game.bets && <p className="slate-bets"><Link to="/bets">{betsText(game.bets)}</Link></p>}
     </GlassCard>
   );
 }

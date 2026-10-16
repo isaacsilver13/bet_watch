@@ -148,6 +148,26 @@ describe("MatchupPage", () => {
     expect(screen.getByText(/Ankle/)).toBeInTheDocument();
   });
 
+  it("marks the stars on the injury report and says which are out", async () => {
+    vi.mocked(fetchGame).mockResolvedValue(GAME);
+    vi.mocked(fetchContext).mockResolvedValue(context({
+      home: team(10, "DEN", {
+        injuries: [
+          { player: "Bam Adebayo", position: null, status: "Out", detail: "Toe", reported_at: null, star: true },
+          { player: "Bench Guy", position: null, status: "Out", detail: "Knee", reported_at: null, star: false },
+        ],
+        star_flag: { out: ["Bam Adebayo"], questionable: ["Tyler Herro"] },
+      }),
+    }));
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "Injuries" }));
+    expect(await screen.findByText("DEN: Stars out: Bam Adebayo")).toBeInTheDocument();
+    expect(screen.getByText("DEN: Stars questionable: Tyler Herro")).toBeInTheDocument();
+    expect(screen.getByText("★ Bam Adebayo")).toBeInTheDocument();
+    expect(screen.getByText("Bench Guy")).toBeInTheDocument();
+    expect(screen.queryByText("★ Bench Guy")).not.toBeInTheDocument();
+  });
+
   it("shows the short week and travel on the situation tab", async () => {
     vi.mocked(fetchGame).mockResolvedValue(GAME);
     vi.mocked(fetchContext).mockResolvedValue(context());

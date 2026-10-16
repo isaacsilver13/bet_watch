@@ -1,4 +1,4 @@
-import type { SlateGame, SlateTeam } from "./slate";
+import type { SlateGame, SlateTeam, StarFlag } from "./slate";
 
 export interface Tally { win: number; loss: number; push: number }
 /** For over/under, win = over and loss = under. */
@@ -25,6 +25,7 @@ export interface Injury {
   status: string;
   detail: string | null;
   reported_at: string | null;
+  star?: boolean;
 }
 
 export interface QbFlag { player: string; status: string }
@@ -36,6 +37,7 @@ export interface TeamContext {
   situation: Situation;
   injuries: Injury[];
   qb_flag: QbFlag | null;
+  star_flag?: StarFlag | null;
 }
 
 export interface Meeting {
