@@ -12,6 +12,7 @@ function when(iso: string | null): string {
 
 function Problems({ health }: { health: OpsHealth }) {
   const items = [
+    health.run_due_status === "failed" && "The latest run-due completed with failed, missed or incomplete work. Review the job states below.",
     health.run_due_stale && `run-due has not fired since ${when(health.run_due_last_at)}. Is the Task Scheduler job registered and the PC on?`,
     health.stuck_raw_saved.length > 0 && `${health.stuck_raw_saved.length} paid response(s) saved but not parsed: ${health.stuck_raw_saved.join(", ")}`,
     health.unlinked_events.length > 0 && `${health.unlinked_events.length} odds event(s) match no game: ${health.unlinked_events.join(", ")}`,

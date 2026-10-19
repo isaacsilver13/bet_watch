@@ -20,10 +20,10 @@ from app.storage.context_repository import ContextRepository
 from app.storage.database import create_session_factory
 from app.storage.games_repository import GamesRepository
 from app.storage.models import Game
-from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from tests.local_client import TestClient
 from tests.matchup_helpers import db_url, load_json, new_session_factory
 
 NOW = datetime(2026, 1, 15, 15, 0, tzinfo=timezone.utc)  # morning of the viewed game

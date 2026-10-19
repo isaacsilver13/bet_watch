@@ -19,10 +19,10 @@ from app.providers.the_odds_api.client import TheOddsApiClient
 from app.storage.database import create_session_factory
 from app.storage.games_repository import GamesRepository
 from app.storage.models import Game, ProviderRefreshRun
-from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from tests.local_client import TestClient
 from tests.matchup_helpers import db_url, load_json, new_session_factory
 
 FIRST = datetime(2026, 10, 13, 15, 0, tzinfo=timezone.utc)  # Tuesday morning
@@ -249,7 +249,6 @@ def test_other_hosts_and_forwarded_requests_still_cannot_spend(
     _live_without_a_secret(monkeypatch)
     client = _client(tmp_path, client=(host, 5000))
     game_id = _den_id(tmp_path)
-    lines = client.get(f"/api/v1/games/{game_id}/lines", headers=headers).json()
-    assert lines["can_refresh"] is False and lines["quota_remaining"] is None
+    assert client.get(f"/api/v1/games/{game_id}/lines", headers=headers).status_code == 403
     assert client.post(f"/api/v1/games/{game_id}/refresh", headers=headers).status_code == 403
     assert ODDS_CALLS == []

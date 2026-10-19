@@ -11,7 +11,8 @@ from app.providers.errors import ProviderTimeoutError
 from app.providers.fixture import FixtureOddsProvider
 from app.providers.stub import EmptyOddsProvider
 from app.providers.the_odds_api import TheOddsApiProvider
-from fastapi.testclient import TestClient
+
+from tests.local_client import TestClient
 
 client = TestClient(app)
 

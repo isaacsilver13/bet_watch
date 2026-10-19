@@ -13,7 +13,8 @@ from app.providers.cache import CachedOddsProvider
 from app.providers.fixture import FixtureOddsProvider
 from app.providers.the_odds_api import TheOddsApiProvider
 from app.throttle import SlidingWindowLimiter
-from fastapi.testclient import TestClient
+
+from tests.local_client import TestClient
 
 client = TestClient(app)
 SECRET = "test-admin-secret"

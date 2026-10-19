@@ -51,3 +51,21 @@ if FRONTEND_DIST.is_dir():
         if full_path and is_within_dist and candidate.is_file():
             return FileResponse(candidate)
         return FileResponse(FRONTEND_DIST / "index.html")
+
+
+@app.middleware("http")
+async def private_application_boundary(request, call_next):
+    from fastapi.responses import JSONResponse
+
+    from app.api.private_access import may_access_private_data
+
+    public_health = {
+        "/health", "/api/v1/health", "/api/v1/health/ready",
+        "/api/v1/health/metrics", "/api/v1/status",
+    }
+    if not (request.method == "GET" and request.url.path in public_health):
+        if not may_access_private_data(request):
+            return JSONResponse(status_code=403, content={
+                "detail": "Private local application. Use loopback or the owner token."
+            })
+    return await call_next(request)

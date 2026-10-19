@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timezone
 
 import httpx
+import pytest
 from app.jobs.runner import (
     HEARTBEAT_PROVIDER,
     JobContext,
@@ -136,6 +137,54 @@ def test_heartbeat_recorded(tmp_path) -> None:
         assert beat is not None and beat.status == "succeeded"
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("outcome", [RuntimeError("fixture failure"), "partial", "raw_saved"])
+def test_failed_run_keeps_running_later_jobs_and_records_failed_heartbeat(tmp_path, outcome):
+    async def scenario():
+        ctx = await _ctx(tmp_path)
+        failed = FakeJob([outcome])
+        later = FakeJob(["done"], slots=[Slot("later:now", NOW, NOW.replace(minute=59))])
+        later.name = "later"
+        result = await run_due([failed, later], ctx, NOW)
+        assert result.had_failures
+        assert result["later:now"] == "done" and later.calls == 1
+        async with ctx.session_factory() as session:
+            beat = await session.scalar(select(ProviderRefreshRun).where(
+                ProviderRefreshRun.provider == HEARTBEAT_PROVIDER
+            ))
+        assert beat.status == "failed"
+        await ctx.http.aclose()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("outcome", ["done", "empty", "skipped_quota"])
+def test_completed_or_deliberately_skipped_jobs_are_healthy(tmp_path, outcome):
+    async def scenario():
+        ctx = await _ctx(tmp_path)
+        result = await run_due([FakeJob([outcome])], ctx, NOW)
+        assert not result.had_failures
+        await ctx.http.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_cli_returns_failure_and_disposes_engine(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from app.jobs import __main__ as cli
+    from app.jobs.runner import RunResults
+
+    engine = SimpleNamespace(dispose=AsyncMock())
+    result = RunResults({"fixture:now": "pending"})
+    result.had_failures = True
+    monkeypatch.setattr(cli, "create_engine", lambda settings: engine)
+    monkeypatch.setattr(cli, "create_session_factory", lambda engine: None)
+    monkeypatch.setattr(cli, "run_due", AsyncMock(return_value=result))
+    assert asyncio.run(cli.main(["run-due"])) == 1
+    engine.dispose.assert_awaited_once()
 
 
 class PlannedJob(FakeJob):

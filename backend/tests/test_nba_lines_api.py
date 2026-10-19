@@ -15,10 +15,10 @@ from app.providers.the_odds_api.client import TheOddsApiClient
 from app.storage.database import create_session_factory
 from app.storage.games_repository import GamesRepository
 from app.storage.models import Game, OfferObservation
-from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from tests.local_client import TestClient
 from tests.matchup_helpers import db_url, load_json, new_session_factory
 
 NOW = datetime(2026, 1, 15, 16, 30, tzinfo=timezone.utc)

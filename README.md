@@ -215,3 +215,19 @@ The Vite development server proxies `/api` to `http://127.0.0.1:8000`.
 smoke test in desktop and mobile viewports. It never reads the repository `.env`.
 The multi-stage Docker build still compiles this frontend and has FastAPI serve it from the same
 origin as `/api/v1`, but nothing deploys it: the app is local-only (see "Local matchup hub").
+
+
+## Private local application boundary
+
+This application holds a private bet journal and is local-only. Bind the API and
+Vite to loopback. Direct requests must have a loopback peer and localhost/loopback
+Host, with no forwarding headers or hostile browser Origin/Fetch Metadata.
+The default Vite origins on port 5173 and the API origin are accepted. Other requests require the existing owner
+`X-Admin-Token`; keep it out of client bundles and URLs. Only aggregate health/status
+GET endpoints remain public. This boundary also protects journal-derived badges,
+operations and static UI, rather than protecting only `/bets` while leaking data
+through another route. CI intentionally does not deploy this app.
+
+`run-due` continues processing independent jobs after failures, but logs a failed
+heartbeat and exits nonzero for incomplete/failed/missed work. A fresh heartbeat
+means the runner executed; `run_due_status` separately records its outcome.
