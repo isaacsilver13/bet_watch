@@ -11,10 +11,10 @@ from app.storage.database import create_session_factory
 from app.storage.games_repository import GamesRepository
 from app.storage.models import EventRecord, Game, JobSlot
 from app.storage.settlement import settle_final
-from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from tests.local_client import TestClient
 from tests.matchup_helpers import db_url, load_json, new_session_factory
 
 NOW = datetime(2026, 1, 16, 12, 0, tzinfo=timezone.utc)

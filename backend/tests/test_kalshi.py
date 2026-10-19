@@ -168,7 +168,8 @@ from app.api import routes  # noqa: E402
 from app.main import app  # noqa: E402
 from app.providers.errors import ProviderTimeoutError  # noqa: E402
 from app.providers.kalshi.adapter import KalshiFixtureClient, KalshiProvider  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
+
+from tests.local_client import TestClient  # noqa: E402
 
 api = TestClient(app)
 

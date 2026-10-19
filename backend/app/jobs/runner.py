@@ -111,8 +111,12 @@ async def _planned_slots(job: Job, ctx: JobContext, now: datetime) -> list[Slot]
     return await planner(ctx, now) if planner else job.slots(now)
 
 
-async def run_due(jobs: Sequence[Job], ctx: JobContext, now: datetime) -> dict[str, str]:
-    results: dict[str, str] = {}
+class RunResults(dict[str, str]):
+    had_failures: bool = False
+
+
+async def run_due(jobs: Sequence[Job], ctx: JobContext, now: datetime) -> RunResults:
+    results = RunResults()
     for job in jobs:
         for slot in await _planned_slots(job, ctx, now):
             if now < slot.window_start:
@@ -125,6 +129,7 @@ async def run_due(jobs: Sequence[Job], ctx: JobContext, now: datetime) -> dict[s
             # window so the job can parse it, rather than being written off as missed.
             if now >= slot.window_end and state != "raw_saved":
                 await update_slot(ctx, job.name, slot.key, state="missed", at=now)
+                results.had_failures = True
                 results[slot.key] = "missed"
                 continue
             started_at = datetime.now(timezone.utc)
@@ -132,6 +137,7 @@ async def run_due(jobs: Sequence[Job], ctx: JobContext, now: datetime) -> dict[s
                 state = await job.run(ctx, slot)
                 await _log_attempt(ctx, f"job:{job.name}", started_at)
             except Exception as error:  # one job's failure must not stop the others
+                results.had_failures = True
                 logger.exception("job %s slot %s failed", job.name, slot.key)
                 await _log_attempt(ctx, f"job:{job.name}", started_at, error)
                 # The job may have saved a paid response before it crashed; keep that state.
@@ -143,7 +149,13 @@ async def run_due(jobs: Sequence[Job], ctx: JobContext, now: datetime) -> dict[s
                 state = "failed"
             await update_slot(ctx, job.name, slot.key, state=state, attempts=attempts, at=now)
             results[slot.key] = state
-    await _log_attempt(ctx, HEARTBEAT_PROVIDER, now)
+            if state not in {"done", "empty", "skipped_quota"}:
+                results.had_failures = True
+    error = (
+        RuntimeError("One or more scheduled jobs did not complete")
+        if results.had_failures else None
+    )
+    await _log_attempt(ctx, HEARTBEAT_PROVIDER, now, error)
     return results
 
 

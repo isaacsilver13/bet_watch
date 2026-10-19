@@ -12,6 +12,7 @@ export interface OpsHealth {
   generated_at: string;
   run_due_last_at: string | null;
   run_due_stale: boolean;
+  run_due_status?: string | null;
   jobs: JobStatus[];
   slots_today: Record<string, number>;
   credits_remaining: number | null;

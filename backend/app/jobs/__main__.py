@@ -48,8 +48,11 @@ async def main(argv: Optional[list[str]] = None) -> int:
                 create_session_factory(engine), http, Path(settings.raw_data_dir), settings, odds
             )
             if args.command == "run-due":
-                for key, state in (await run_due(JOBS, ctx, datetime.now(timezone.utc))).items():
+                results = await run_due(JOBS, ctx, datetime.now(timezone.utc))
+                for key, state in results.items():
                     print(f"{state:>13}  {key}")
+                if results.had_failures:
+                    return 1
             else:
                 print(await run_once(by_name[args.command], ctx))
     finally:

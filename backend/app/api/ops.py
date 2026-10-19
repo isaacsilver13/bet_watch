@@ -41,6 +41,7 @@ class JobStatus(BaseModel):
 class OpsHealth(BaseModel):
     generated_at: datetime
     run_due_last_at: Optional[datetime]
+    run_due_status: Optional[str]
     run_due_stale: bool  # no run-due heartbeat lately: Task Scheduler is not firing
     jobs: list[JobStatus]  # the latest slot of each job
     slots_today: dict[str, int]  # Central-time calendar day, by state
@@ -106,7 +107,7 @@ async def ops_health(
     games = GamesRepository(session_factory)
     async with session_factory() as session:
         beat = await session.scalar(
-            select(ProviderRefreshRun.completed_at)
+            select(ProviderRefreshRun)
             .where(ProviderRefreshRun.provider == HEARTBEAT_PROVIDER)
             .order_by(ProviderRefreshRun.completed_at.desc())
             .limit(1)
@@ -144,8 +145,9 @@ async def ops_health(
         )
     return OpsHealth(
         generated_at=now,
-        run_due_last_at=aware(beat) if beat else None,
-        run_due_stale=beat is None or now - aware(beat) > HEARTBEAT_STALE_AFTER,
+        run_due_last_at=aware(beat.completed_at) if beat else None,
+        run_due_status=beat.status if beat else None,
+        run_due_stale=beat is None or now - aware(beat.completed_at) > HEARTBEAT_STALE_AFTER,
         jobs=[
             JobStatus(
                 job=row.job,
