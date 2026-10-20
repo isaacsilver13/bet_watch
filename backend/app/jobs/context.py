@@ -93,14 +93,13 @@ class InjuriesJob:
 
     async def run(self, ctx: JobContext, slot: Slot) -> str:
         records = parse_injuries(await fetch_injuries(ctx.http, self.sport))
-        if not records:
-            return "empty"  # ponytail: an all-clear league keeps showing the last snapshot
         result = await ContextRepository(ctx.session_factory).save_injuries(
             self.sport, records, _now()
         )
         if result.unknown_teams:
             logger.warning("injuries: unknown ESPN team ids %s", result.unknown_teams)
-        return "done"
+            return "partial"
+        return "done"  # an empty successful poll is an explicit all-clear snapshot
 
 
 class WeatherJob:

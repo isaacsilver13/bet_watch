@@ -11,8 +11,7 @@ from dotenv import dotenv_values
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DOTENV_PATH = _REPO_ROOT / ".env"
 _DEFAULT_DATABASE_URL = (
-    "postgresql+asyncpg://betting_aggregator:betting_aggregator@127.0.0.1:5433/"
-    "betting_aggregator"
+    "postgresql+asyncpg://betting_aggregator:betting_aggregator@127.0.0.1:5433/betting_aggregator"
 )
 
 
@@ -87,6 +86,7 @@ class Settings:
     admin_refresh_budget: int = 4
     admin_refresh_budget_window_seconds: int = 86400
     raw_data_dir: str = "data/raw"
+    nba_context_provider: str = "disabled"
 
 
 def load_settings() -> Settings:
@@ -99,6 +99,10 @@ def load_settings() -> Settings:
     persistence_value = _setting("PERSISTENCE_ENABLED", "false").strip().lower()
     if persistence_value not in {"true", "false"}:
         raise ValueError("PERSISTENCE_ENABLED must be 'true' or 'false'")
+
+    nba_context_provider = _setting("NBA_CONTEXT_PROVIDER", "disabled").strip().lower()
+    if nba_context_provider not in {"disabled", "fixture", "espn"}:
+        raise ValueError("NBA_CONTEXT_PROVIDER must be 'disabled', 'fixture', or 'espn'")
 
     return Settings(
         app_env=_setting("APP_ENV", "development").strip().lower(),
@@ -126,4 +130,5 @@ def load_settings() -> Settings:
             _setting("ADMIN_REFRESH_BUDGET_WINDOW_SECONDS", "86400")
         ),
         raw_data_dir=_setting("RAW_DATA_DIR", "").strip() or str(_REPO_ROOT / "data" / "raw"),
+        nba_context_provider=nba_context_provider,
     )

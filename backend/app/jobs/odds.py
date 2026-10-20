@@ -143,7 +143,7 @@ class OddsSnapshotJob:
         return []  # which slots exist depends on the schedule in the database: plan_slots
 
     async def plan_slots(self, ctx: JobContext, now: datetime) -> list[Slot]:
-        if ctx.odds is None or ctx.settings is None:
+        if (ctx.odds is None and not ctx.odds_planning_enabled) or ctx.settings is None:
             return []  # fixture mode, or no key: nothing to spend
         nba = self.sport is Sport.NBA
         if nba:

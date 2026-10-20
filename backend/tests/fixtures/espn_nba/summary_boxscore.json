@@ -1,0 +1,66 @@
+{
+  "header": {
+    "competitions": [
+      {
+        "status": {"period": 4, "type": {"state": "post"}},
+        "competitors": [
+          {"team": {"id": "19", "abbreviation": "ORL"}, "score": "112"},
+          {"team": {"id": "29", "abbreviation": "MEM"}, "score": "107"}
+        ]
+      }
+    ]
+  },
+  "boxscore": {
+    "teams": [
+      {
+        "team": {"id": "19", "abbreviation": "ORL"},
+        "statistics": [
+          {"name": "fieldGoalsMade-fieldGoalsAttempted", "displayValue": "41-88"},
+          {"name": "threePointFieldGoalsMade-threePointFieldGoalsAttempted", "displayValue": "10-30"},
+          {"name": "freeThrowsMade-freeThrowsAttempted", "displayValue": "20-24"},
+          {"name": "offensiveRebounds", "displayValue": "11"},
+          {"name": "defensiveRebounds", "displayValue": "34"},
+          {"name": "totalTurnovers", "displayValue": "13"}
+        ]
+      },
+      {
+        "team": {"id": "29", "abbreviation": "MEM"},
+        "statistics": [
+          {"name": "fieldGoalsMade-fieldGoalsAttempted", "displayValue": "39-91"},
+          {"name": "threePointFieldGoalsMade-threePointFieldGoalsAttempted", "displayValue": "11-32"},
+          {"name": "freeThrowsMade-freeThrowsAttempted", "displayValue": "18-22"},
+          {"name": "offensiveRebounds", "displayValue": "12"},
+          {"name": "defensiveRebounds", "displayValue": "32"},
+          {"name": "totalTurnovers", "displayValue": "15"}
+        ]
+      }
+    ],
+    "players": [
+      {
+        "team": {"id": "19", "abbreviation": "ORL"},
+        "statistics": [
+          {
+            "labels": ["MIN", "PTS", "FG", "3PT", "FT"],
+            "athletes": [
+              {"athlete": {"id": "201", "displayName": "Paolo Banchero"}, "stats": ["36:30", "28", "10-20", "2-6", "6-7"]},
+              {"athlete": {"id": "202", "displayName": "Franz Wagner"}, "stats": ["34", "22", "8-16", "3-7", "3-4"]},
+              {"athlete": {"id": "203", "displayName": "Bench Player"}, "didNotPlay": true, "stats": []}
+            ]
+          }
+        ]
+      },
+      {
+        "team": {"id": "29", "abbreviation": "MEM"},
+        "statistics": [
+          {
+            "labels": ["MIN", "PTS", "FG", "3PT", "FT"],
+            "athletes": [
+              {"athlete": {"id": "301", "displayName": "Ja Morant"}, "stats": ["35", "25", "9-19", "2-5", "5-6"]},
+              {"athlete": {"id": "302", "displayName": "Jaren Jackson Jr."}, "stats": ["33:15", "20", "7-15", "3-8", "3-4"]}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

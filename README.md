@@ -30,9 +30,9 @@ Standalone NFL and NBA odds comparison app.
 
 ## Local matchup hub
 
-This app is **local-only**: it runs on your PC against docker-compose Postgres and will hold
-private data. CI no longer deploys; the existing Fly app is left as it is until the owner
-decides what to do with it. Analysis here is statistically honest context, not betting advice.
+Local development runs against docker-compose Postgres and may hold private data. CI does not
+deploy automatically; production changes to the existing Fly app remain an explicit owner action.
+Analysis here is statistically honest context, not betting advice.
 
 1. `docker compose up -d postgres`
 2. `copy .env.example .env` (defaults: fixture odds, persistence on)
@@ -43,9 +43,7 @@ decides what to do with it. Analysis here is statistically honest context, not b
    `python -m app.jobs weather`
 5. `uvicorn app.main:app --app-dir backend --reload --port 8000`, and `npm run dev` in `frontend/`
 6. Open `http://localhost:5173/nfl`. The odds board is at `/odds`.
-7. Optional: `powershell -ExecutionPolicy Bypass -File scripts/register_run_due_task.ps1` runs
-   `python -m app.jobs run-due` every 15 minutes while the PC is on. Hours the PC was off are
-   marked `missed` once and never retried.
+7. For a one-off local scheduler pass, run `python -m app.jobs run-due`.
 
 Click a game on the slate to open its matchup page (`/game/<id>`): records against the spread,
 season efficiency with league ranks, rest and travel, injuries (with a flag when last week's
@@ -54,6 +52,43 @@ what was known before kickoff, and each tab says when its data was last refreshe
 context, not betting advice. Sources: nflverse team stats (daily), ESPN injuries (daily) and
 Open-Meteo forecasts (every 3 hours); all free, none need a key. The scheduled `run-due` picks
 up `team_stats`, `injuries` and `weather` on its own; `team_stats_history` is manual.
+
+### Hosted scheduler
+
+Production scheduling uses cron-job.org to dispatch `.github/workflows/run-due.yml`, not Windows
+Task Scheduler. Before enabling it:
+
+1. Merge the scheduler workflow and application changes to `master`.
+2. Deploy that exact commit with
+   `$revision = git rev-parse HEAD; fly deploy --build-arg "APP_REVISION=$revision"`. The Fly
+   release command applies migration `0005`, and `fly.toml` enables `NBA_CONTEXT_PROVIDER=espn`.
+3. Confirm the deployment is healthy. The workflow deliberately fails if its `GITHUB_SHA` does
+   not match the image's embedded `APP_REVISION`, so a merge without a matching deploy cannot run
+   stale scheduler code.
+
+Then configure one cron-job.org job with:
+
+- URL: `https://api.github.com/repos/isaacsilver13/betting_aggregator/actions/workflows/run-due.yml/dispatches`
+- Method: `POST`
+- Schedule: every 15 minutes, timezone `America/Chicago`
+- Body: `{"ref":"master"}` with content type `application/json`
+- Headers: `Accept: application/vnd.github+json`, `Authorization: Bearer <GITHUB_TOKEN>`, and
+  `X-GitHub-Api-Version: 2026-03-10`
+- Default 30-second request timeout; saved responses disabled
+
+Use a fine-grained GitHub token limited to this repository with Actions write permission. Store it
+only in Bitwarden and cron-job.org; never put it in the URL, repository, request body, or job title.
+Add `DATABASE_URL` as a GitHub Actions secret alongside `FLY_API_TOKEN_API`. GitHub accepts the
+dispatch immediately, then the workflow runs the database-only `python -m app.jobs check-due`
+preflight against PostgreSQL. It records the scheduler heartbeat but makes no provider calls. When
+no slot is due, the workflow exits without contacting Fly. When work is
+due, it starts the existing Fly machine, keeps that exact machine awake with health requests,
+verifies its deployed revision, and runs `python -m app.jobs run-due` over Fly SSH. The existing
+`FLY_API_TOKEN_API` Actions secret authorizes the Fly step. The preflight plans paid slots without
+holding or calling the Odds API key. A PostgreSQL advisory lock prevents overlap
+across workflow, Fly, and manual CLI invocations (SQLite uses a process lock locally). Successful
+passes record the heartbeat shown on `/ops`; a terminal job failure makes the Actions run fail.
+Unavailable hours are marked `missed` once and are not replayed.
 
 ### Prices, bets and closing-line value
 
@@ -87,8 +122,34 @@ computed only from games before tip-off, and ATS and O/U use ESPN's closing line
 2. `python -m app.jobs nba_history` loads the season so far: ESPN day by day, then each finished
    game's closing line. It takes a few minutes and is free (no key).
 3. `run-due` then keeps it current: `nba_scoreboard` (hourly), `nba_closes` (daily),
-   `nba_team_stats` (daily, from stats.nba.com), `nba_injuries` (10:00, 16:00 and 22:00 Central) and
-   `nba_link_events`.
+   `nba_injuries` (10:00, 16:00 and 22:00 Central) and `nba_link_events`. NBA team/player
+   context is disabled by default. To opt into the same zero-key ESPN feed, set
+   `NBA_CONTEXT_PROVIDER=espn`; `nba_team_stats`
+   then runs hourly from 08:00 through 11:00 Central for uncovered completed-game dates. Never-
+   checked and least-recently checked dates go first, so a missing provider date cannot block newer
+   games. Each run handles at most four games: one scoreboard request plus one summary request per
+   game, or at most five requests. Four runs can cover a 15-game day in 19 requests and skip games
+   already stored successfully. A manual
+   `python -m app.jobs nba_team_stats` run rechecks yesterday's least-recently checked four games
+   so provider corrections remain ingestible without an unbounded burst.
+
+The ESPN JSON feed is undocumented and best-effort, even though the app already uses it for the
+schedule, closes, and injuries. The integration is intended for this private/local app; a public or
+commercial betting product needs a separate data-rights review. The Health page reports exact
+locally attempted requests, last successful coverage, and the last persistence error. HTTP or
+parser failures remain job errors; they are never recorded as empty successful refreshes.
+
+Team and player box scores are append-only observations, so historical context ignores data first
+seen after its matchup cutoff; preseason games are excluded from ratings and star samples. Stars
+are the top three players by minutes per game: prior-season minutes remain the baseline until five
+current-season team games are stored; on a fresh install without prior-season rows, the available
+early current-season sample is used instead. ESPN also remains the best-effort NBA injury source. Every
+successful poll writes a snapshot header, including an empty
+all-clear, and reports older than 36 hours do not keep showing players as injured. The
+`star_overrides` and `injury_overrides` tables support explicitly bounded `starts_at`/`ends_at`
+manual corrections with provenance; a manual healthy status stays visible and does not make stale
+ESPN data look fresh. There is intentionally no public mutation endpoint. Apply migration
+`0005_free_nba_context` with `alembic upgrade head` before enabling the provider.
 
 NBA prices use the same Odds API key and the same credit pool. With `PROVIDER_MODE=live`,
 `odds_snapshot_nba` takes a snapshot at 10am Central every day and shortly before the first and

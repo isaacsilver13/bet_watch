@@ -4,12 +4,17 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from app.ingest.espn import fetch_scoreboard_day, parse_scoreboard
-from app.ingest.nba_stats import SEASON_TYPES, fetch_team_game_logs, parse_team_game_logs
+from app.ingest.espn import (
+    fetch_scoreboard_day,
+    fetch_summary,
+    parse_nba_box_score,
+    parse_nba_completed_games,
+    parse_scoreboard,
+)
 from app.jobs.context import InjuriesJob
 from app.jobs.nfl import EspnClosesJob, LinkEventsJob
 from app.jobs.runner import JobContext
-from app.jobs.slots import Slot, daily_slot, hourly_slots
+from app.jobs.slots import Slot, hourly_slots
 from app.storage.context_repository import ContextRepository
 from app.storage.games_repository import GamesRepository
 
@@ -19,6 +24,8 @@ EASTERN = ZoneInfo("America/New_York")  # ESPN's "day" is the US Eastern date
 DAYS_BACK = 1  # yesterday too, so a late game still gets its final after a PC-off gap
 DAYS_AHEAD = 2
 SEASON_LENGTH = timedelta(days=300)  # October through the Finals, with room to spare
+MAX_CONTEXT_GAMES_PER_RUN = 4
+MAX_CONTEXT_REQUESTS_PER_RUN = 5  # one scoreboard day plus at most four summaries
 
 
 def _now() -> datetime:
@@ -83,29 +90,76 @@ class NbaHistoryJob:
 
 
 class NbaTeamStatsJob:
-    """Advanced and four-factor game logs for the current season, refreshed daily."""
+    """Incremental completed-game context from ESPN's existing zero-key feed."""
 
     name = "nba_team_stats"
     max_attempts = 3
 
     def slots(self, now: datetime) -> list[Slot]:
-        return daily_slot(self.name, now)
+        return hourly_slots(self.name, now, first_hour=8, last_hour=11, step=1)
+
+    async def plan_slots(self, ctx: JobContext, now: datetime) -> list[Slot]:
+        settings = ctx.settings
+        if settings is None or settings.nba_context_provider != "espn":
+            return []
+        return self.slots(now)
 
     async def run(self, ctx: JobContext, slot: Slot) -> str:
-        season = nba_season_year(_now())
-        records = []
-        for season_type in SEASON_TYPES:
-            advanced = await fetch_team_game_logs(ctx.http, season, season_type, "Advanced")
-            factors = await fetch_team_game_logs(ctx.http, season, season_type, "Four Factors")
-            records.extend(parse_team_game_logs(advanced, factors))
-        if not records:
-            return "empty"  # the season has no games yet
-        result = await ContextRepository(ctx.session_factory).save_game_log_stats(
-            NBA, records, _now()
-        )
-        if result.unmatched:
-            logger.warning("nba_team_stats: %s rows had no game yet", len(result.unmatched))
-        return "done" if result.saved else "empty"
+        settings = ctx.settings
+        if settings is None or settings.nba_context_provider != "espn":
+            return "empty"
+        observed_at = _now()
+        repo = ContextRepository(ctx.session_factory)
+        yesterday = observed_at.astimezone(EASTERN).date() - timedelta(days=1)
+        through = datetime.combine(yesterday, datetime.max.time(), EASTERN).astimezone(timezone.utc)
+        manual_recheck = ":manual:" in slot.key
+        days = [yesterday] if manual_recheck else await repo.pending_nba_dates(through)
+        saved = 0
+        processed = 0
+        requests = 0
+        had_partial = False
+        for day in days:
+            if requests >= MAX_CONTEXT_REQUESTS_PER_RUN:
+                break
+            await repo.record_nba_request_attempt("scoreboard", day.isoformat(), day, observed_at)
+            requests += 1
+            payload = await fetch_scoreboard_day(ctx.http, NBA, day)
+            await repo.record_nba_date_lookup(
+                datetime.combine(day, datetime.min.time(), timezone.utc), observed_at, None
+            )
+            games = parse_nba_completed_games(payload)
+            if manual_recheck:
+                games = await repo.order_nba_games_for_recheck(games)
+            for game in games:
+                if processed == MAX_CONTEXT_GAMES_PER_RUN:
+                    break
+                if not manual_recheck and await repo.nba_game_complete(game.provider_game_id):
+                    continue
+                if requests + 1 > MAX_CONTEXT_REQUESTS_PER_RUN:
+                    break
+                await repo.record_nba_request_attempt(
+                    "summary", game.provider_game_id, game.game_date, observed_at
+                )
+                requests += 1
+                summary = await fetch_summary(ctx.http, NBA, game.provider_game_id)
+                team_records, player_records = parse_nba_box_score(game, summary)
+                result = await repo.save_nba_box_scores(
+                    game,
+                    team_records,
+                    player_records,
+                    observed_at,
+                    None,
+                )
+                saved += result.team_rows + result.player_rows
+                processed += 1
+                if result.unmatched:
+                    had_partial = True
+                    logger.warning("nba_team_stats: unmatched %s", result.unmatched)
+            if processed == MAX_CONTEXT_GAMES_PER_RUN:
+                break
+        if had_partial:
+            return "partial"
+        return "done" if saved or (manual_recheck and processed) else "empty"
 
 
 NBA_JOBS = [

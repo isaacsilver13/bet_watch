@@ -164,8 +164,9 @@ function InjuryList({ team }: { team: TeamContext }) {
         <ul className="injury-list">
           {team.injuries.map((injury: Injury) => (
             <li key={`${injury.player}-${injury.status}`}>
-              <strong>{injury.player}</strong>{injury.position ? ` (${injury.position})` : ""} — {injury.status}
+              <strong>{injury.is_star ? "★ " : ""}{injury.player}</strong>{injury.position ? ` (${injury.position})` : ""} — {injury.status}
               {injury.detail ? `, ${injury.detail}` : ""}
+              <span className="injury-source"> · {injury.manual ? "manual override" : (injury.source ?? "espn")}</span>
             </li>
           ))}
         </ul>

@@ -18,13 +18,16 @@ from app.domain.slate import (
     LineView,
     SlateGame,
     SlateResponse,
+    SlateStarFlag,
     TeamView,
     WeatherView,
     WeekRef,
 )
+from app.identity import normalize_name
+from app.storage.context_repository import ContextRepository
 from app.storage.database import create_engine, create_session_factory
 from app.storage.games_repository import LINE_FIELDS, aware
-from app.storage.models import Game, GameLine, Team, Venue, Weather
+from app.storage.models import Bet, Game, GameLine, Team, Venue, Weather
 
 router = APIRouter(prefix="/api/v1")
 SOURCE_PRIORITY = ("espn", "nflverse")
@@ -95,7 +98,12 @@ async def resolve_week(
     return (row[0], row[1], row[2]) if row else None
 
 
-async def load_slate_games(session: AsyncSession, *conditions: ColumnElement) -> list[SlateGame]:
+async def load_slate_games(
+    session: AsyncSession,
+    *conditions: ColumnElement,
+    context_repo: Optional[ContextRepository] = None,
+    now: Optional[datetime] = None,
+) -> list[SlateGame]:
     """Games matching `conditions`, in kickoff order, with lines, venue roof and weather."""
     home, away = aliased(Team), aliased(Team)
     rows = (
@@ -111,6 +119,7 @@ async def load_slate_games(session: AsyncSession, *conditions: ColumnElement) ->
     game_ids = [row[0].id for row in rows]
     lines_by_game: dict[int, list[GameLine]] = defaultdict(list)
     weather_by_game: dict[int, Weather] = {}
+    bet_game_ids: set[int] = set()
     if game_ids:
         for line in (
             await session.scalars(select(GameLine).where(GameLine.game_id.in_(game_ids)))
@@ -120,11 +129,33 @@ async def load_slate_games(session: AsyncSession, *conditions: ColumnElement) ->
             await session.scalars(select(Weather).where(Weather.game_id.in_(game_ids)))
         ).all():
             weather_by_game[weather.game_id] = weather
+        bet_game_ids = set(
+            (await session.scalars(select(Bet.game_id).where(Bet.game_id.in_(game_ids)))).all()
+        )
 
     games = []
     for game, home_team, away_team, venue_name, venue_roof in rows:
         lines = pick_lines(lines_by_game[game.id])
         weather = weather_by_game.get(game.id)
+        star_flags: list[SlateStarFlag] = []
+        if game.sport == "nba" and context_repo is not None:
+            cutoff = min(now or datetime.now(timezone.utc), aware(game.start_time))
+            injuries, _ = await context_repo.injury_snapshot(
+                "nba", {home_team.id, away_team.id}, cutoff
+            )
+            for team in (home_team, away_team):
+                star_names = {
+                    normalize_name(star.player): star.player
+                    for star in await context_repo.star_players(team.id, game.season, cutoff)
+                }
+                for injury in injuries[team.id]:
+                    if injury.status.lower() in {"available", "active", "healthy", "cleared"}:
+                        continue
+                    canonical = star_names.get(normalize_name(injury.player))
+                    if canonical:
+                        star_flags.append(
+                            SlateStarFlag(team=team.abbr, player=canonical, status=injury.status)
+                        )
         games.append(
             SlateGame(
                 id=game.id,
@@ -162,6 +193,8 @@ async def load_slate_games(session: AsyncSession, *conditions: ColumnElement) ->
                     conditions=weather.conditions,
                     fetched_at=aware(weather.fetched_at),
                 ),
+                has_bet=game.id in bet_game_ids,
+                star_flags=star_flags,
             )
         )
     return games
@@ -201,6 +234,8 @@ async def get_slate(
             Game.season == season,
             Game.season_type == season_type,
             Game.week == week,
+            context_repo=ContextRepository(session_factory),
+            now=now,
         )
     return SlateResponse(
         sport=sport, season=season, season_type=season_type, week=week, weeks=weeks, games=games
@@ -262,7 +297,12 @@ async def get_day_slate(
             .limit(1)
         )
         games = await load_slate_games(
-            session, Game.sport == sport, Game.start_time >= start, Game.start_time < end
+            session,
+            Game.sport == sport,
+            Game.start_time >= start,
+            Game.start_time < end,
+            context_repo=ContextRepository(session_factory),
+            now=now,
         )
     return DaySlateResponse(
         sport=sport,

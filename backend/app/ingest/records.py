@@ -1,7 +1,7 @@
 """Source-neutral game and line records that every ingest parser produces."""
 
 from dataclasses import dataclass, fields
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 
@@ -50,3 +50,37 @@ class InjuryRecord:
     status: str  # Out | Doubtful | Questionable | Injured Reserve | Suspension | ...
     detail: Optional[str]
     reported_at: Optional[datetime]
+
+
+@dataclass(frozen=True)
+class NbaProviderGame:
+    provider_game_id: str
+    game_date: date
+    period: int
+    home_team: str
+    away_team: str
+    home_provider_team_id: str
+    away_provider_team_id: str
+
+
+@dataclass(frozen=True)
+class NbaTeamBoxScoreRecord:
+    provider_game_id: str
+    game_date: date
+    team: str
+    opponent: str
+    provider_team_id: str
+    stats: dict[str, float]
+
+
+@dataclass(frozen=True)
+class NbaPlayerBoxScoreRecord:
+    provider_game_id: str
+    game_date: date
+    team: str
+    opponent: str
+    provider_team_id: str
+    provider_player_id: str
+    player: str
+    minutes: float
+    stats: dict[str, float]

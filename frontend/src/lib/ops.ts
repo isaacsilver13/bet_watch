@@ -23,6 +23,14 @@ export interface OpsHealth {
   unlinked_events: string[];
   stuck_raw_saved: string[];
   finals_missing_close: number;
+  nba_context?: {
+    requests_today: number;
+    requests_today_estimated: boolean;
+    last_success_at: string | null;
+    last_covered_date: string | null;
+    quota_remaining: number | null;
+    last_error: string | null;
+  };
 }
 
 export async function fetchHealth(signal?: AbortSignal): Promise<OpsHealth> {

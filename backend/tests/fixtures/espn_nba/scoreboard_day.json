@@ -16,6 +16,7 @@
      "date": "2026-01-15T19:00Z",
      "neutralSite": true,
      "status": {
+      "period": 4,
       "type": {
        "id": "3",
        "name": "STATUS_FINAL",
@@ -70,6 +71,7 @@
      "date": "2026-01-16T00:00Z",
      "neutralSite": false,
      "status": {
+      "period": 4,
       "type": {
        "id": "3",
        "name": "STATUS_FINAL",
@@ -124,6 +126,7 @@
      "date": "2026-01-16T00:30Z",
      "neutralSite": false,
      "status": {
+      "period": 4,
       "type": {
        "id": "3",
        "name": "STATUS_FINAL",

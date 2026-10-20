@@ -225,6 +225,21 @@ def test_the_job_does_nothing_in_fixture_mode(tmp_path, monkeypatch) -> None:
     asyncio.run(scenario())
 
 
+def test_preflight_plans_paid_slots_without_a_provider_key_or_call(
+    tmp_path, monkeypatch
+) -> None:
+    async def scenario() -> None:
+        s = await _setup(tmp_path, monkeypatch, live=False)
+        s.ctx.odds_planning_enabled = True
+
+        slots = await OddsSnapshotJob().plan_slots(s.ctx, NOW)
+
+        assert SLOT in {slot.key for slot in slots}
+        assert s.calls == []
+
+    asyncio.run(scenario())
+
+
 def test_running_it_by_hand_without_a_key_says_why_instead_of_spending(
     tmp_path, monkeypatch
 ) -> None:

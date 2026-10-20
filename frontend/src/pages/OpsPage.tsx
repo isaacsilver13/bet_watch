@@ -12,10 +12,11 @@ function when(iso: string | null): string {
 
 function Problems({ health }: { health: OpsHealth }) {
   const items = [
-    health.run_due_stale && `run-due has not fired since ${when(health.run_due_last_at)}. Is the Task Scheduler job registered and the PC on?`,
+    health.run_due_stale && `The hosted scheduler has not checked in since ${when(health.run_due_last_at)}. Check cron-job.org and the GitHub Actions workflow.`,
     health.stuck_raw_saved.length > 0 && `${health.stuck_raw_saved.length} paid response(s) saved but not parsed: ${health.stuck_raw_saved.join(", ")}`,
     health.unlinked_events.length > 0 && `${health.unlinked_events.length} odds event(s) match no game: ${health.unlinked_events.join(", ")}`,
     health.finals_missing_close > 0 && `${health.finals_missing_close} finished game(s) still have no ESPN close.`,
+    health.nba_context?.last_error && `NBA context: ${health.nba_context.last_error}`,
   ].filter((item): item is string => typeof item === "string");
   if (!items.length) return <div className="notice info-notice" role="status">Nothing needs attention.</div>;
   return (
@@ -44,11 +45,15 @@ export function OpsPage() {
         <>
           <Problems health={data} />
           <dl className="summary-cards">
-            <div className="stat"><dt>Last run-due</dt><dd>{when(data.run_due_last_at)}</dd></div>
+            <div className="stat"><dt>Last scheduler check</dt><dd>{when(data.run_due_last_at)}</dd></div>
             <div className="stat"><dt>Odds credits left</dt><dd>{data.credits_remaining ?? "—"}</dd></div>
             <div className="stat">
               <dt>Slots today</dt>
               <dd>{Object.entries(data.slots_today).map(([state, count]) => `${count} ${state}`).join(" · ") || "none"}</dd>
+            </div>
+            <div className="stat">
+              <dt>NBA context requests today</dt>
+              <dd>{data.nba_context?.requests_today ?? 0}</dd>
             </div>
           </dl>
 

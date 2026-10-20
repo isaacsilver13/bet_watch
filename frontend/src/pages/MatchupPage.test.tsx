@@ -299,4 +299,39 @@ describe("MatchupPage for an NBA game", () => {
     expect(await screen.findByText(/ATS and O\/U use ESPN's closing line/)).toBeInTheDocument();
     expect(screen.queryByText(/nflverse/)).not.toBeInTheDocument();
   });
+
+  it("marks an injured star and identifies a manual override", async () => {
+    vi.mocked(fetchContext).mockResolvedValue({
+      ...nbaContext(),
+      away: nbaTeam(41, "BOS", {
+        injuries: [{
+          player: "Jayson Tatum", position: "F", status: "Out", detail: "Knee",
+          reported_at: null, source: "manual", manual: true, is_star: true,
+        }],
+      }),
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "Injuries" }));
+    expect(await screen.findByText(/★ Jayson Tatum/)).toBeInTheDocument();
+    expect(screen.getByText(/manual override/)).toBeInTheDocument();
+  });
+
+  it("shows a manual healthy override without making stale ESPN data look fresh", async () => {
+    vi.mocked(fetchContext).mockResolvedValue({
+      ...nbaContext(),
+      away: nbaTeam(41, "BOS", {
+        injuries: [{
+          player: "Jayson Tatum", position: "F", status: "Available",
+          detail: "confirmed locally", reported_at: null, source: "user_verified", manual: true,
+          is_star: true, data_as_of: new Date().toISOString(),
+        }],
+      }),
+      data_as_of: { ...nbaContext().data_as_of, injuries: "2020-01-01T00:00:00Z" },
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "Injuries" }));
+    expect((await screen.findByText(/★ Jayson Tatum/)).closest("li")).toHaveTextContent("Available");
+    expect(screen.getByText(/manual override/)).toBeInTheDocument();
+    expect(screen.getByText(/· stale/)).toBeInTheDocument();
+  });
 });

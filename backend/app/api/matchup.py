@@ -31,10 +31,12 @@ from app.domain.matchup import (
     QbFlagView,
     RecordSetView,
     SituationView,
+    StarPlayerView,
     TallyView,
     TeamContext,
 )
 from app.domain.slate import SlateGame, TeamView
+from app.identity import normalize_name
 from app.storage.context_repository import ContextRepository
 from app.storage.games_repository import aware
 from app.storage.models import Game, GameLine, Team, TeamGameStat, Venue
@@ -183,9 +185,15 @@ def _team_game(stat: TeamGameStat, game: Game) -> TeamGame:
 async def get_game(
     game_id: int,
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+    now: datetime = Depends(get_now),
 ) -> SlateGame:
     async with session_factory() as session:
-        games = await load_slate_games(session, Game.id == game_id)
+        games = await load_slate_games(
+            session,
+            Game.id == game_id,
+            context_repo=ContextRepository(session_factory),
+            now=now,
+        )
     if not games:
         raise HTTPException(404, detail="Game not found")
     return games[0]
@@ -215,8 +223,13 @@ async def get_context(
         venue = await session.get(Venue, game.venue_id) if game.venue_id else None
         pairs = await _results(session, game.sport, {home.id, away.id})
         results = [result for _, result in pairs]
-        stat_rows = await _efficiency_rows(session, game.sport, game.season)
         is_nba = game.sport == NBA
+        context_repo = ContextRepository(session_factory)
+        stat_rows = (
+            await context_repo.nba_team_stats_before(game.season, min(now, kickoff))
+            if is_nba
+            else await _efficiency_rows(session, game.sport, game.season)
+        )
         if is_nba:
             rated = [
                 RatedGame(g.id, stat.team_id, aware(g.start_time), stat.stats)
@@ -224,14 +237,22 @@ async def get_context(
             ]
             efficiency = season_ratings(rated, kickoff)
         else:
-            efficiency = season_efficiency(
-                [_team_game(stat, g) for stat, g in stat_rows], kickoff
-            )
+            efficiency = season_efficiency([_team_game(stat, g) for stat, g in stat_rows], kickoff)
         stat_times = [
-            aware(stat.fetched_at) for stat, g in stat_rows if aware(g.start_time) < kickoff
+            aware(stat.observed_at if is_nba else stat.fetched_at)
+            for stat, g in stat_rows
+            if aware(g.start_time) < kickoff
         ]
-        injuries, injuries_at = await ContextRepository(session_factory).injury_snapshot(
+        injuries, injuries_at = await context_repo.injury_snapshot(
             game.sport, {home.id, away.id}, min(now, kickoff)
+        )
+        stars = (
+            {
+                team.id: await context_repo.star_players(team.id, game.season, min(now, kickoff))
+                for team in (home, away)
+            }
+            if is_nba
+            else {home.id: [], away.id: []}
         )
         previous = {
             team.id: await _previous(session, game.sport, team.id, kickoff) for team in (home, away)
@@ -261,24 +282,29 @@ async def get_context(
             )
             last_qb = prev_game.home_qb if prev_game.home_team_id == team.id else prev_game.away_qb
         injured = [InjuredPlayer(i.player, i.position, i.status) for i in injuries[team.id]]
+        star_names = {normalize_name(star.player) for star in stars[team.id]}
         flag = qb_flag(last_qb, injured)
         arena = (
-            venue.lat if venue else None, venue.lon if venue else None,
+            venue.lat if venue else None,
+            venue.lon if venue else None,
             venue.tz if venue else None,
         )
         if is_nba:
             nba_spot = schedule_spot(recent[team.id], kickoff, game.season, *arena)
             spot_view = SituationView(
-                rest_days=nba_spot.rest_days, short_week=False, off_bye=False,
-                travel_miles=nba_spot.travel_miles, tz_crossed=nba_spot.tz_crossed,
+                rest_days=nba_spot.rest_days,
+                short_week=False,
+                off_bye=False,
+                travel_miles=nba_spot.travel_miles,
+                tz_crossed=nba_spot.tz_crossed,
                 previous_opponent=nba_spot.previous_opponent,
-                back_to_back=nba_spot.back_to_back, three_in_four=nba_spot.three_in_four,
-                four_in_six=nba_spot.four_in_six, games_last_7=nba_spot.games_last_7,
+                back_to_back=nba_spot.back_to_back,
+                three_in_four=nba_spot.three_in_four,
+                four_in_six=nba_spot.four_in_six,
+                games_last_7=nba_spot.games_last_7,
             )
         else:
-            spot_view = SituationView(
-                **asdict(situation(stop, kickoff, game.season, *arena))
-            )
+            spot_view = SituationView(**asdict(situation(stop, kickoff, game.season, *arena)))
         return TeamContext(
             team=TeamView(id=team.id, abbr=team.abbr, name=team.name),
             records=_records(build_records(results, team.id, game.season, kickoff, last_n)),
@@ -289,12 +315,28 @@ async def get_context(
             situation=spot_view,
             injuries=[
                 InjuryView(
-                    player=i.player, position=i.position, status=i.status, detail=i.detail,
+                    player=i.player,
+                    position=i.position,
+                    status=i.status,
+                    detail=i.detail,
                     reported_at=aware(i.reported_at) if i.reported_at else None,
+                    source=i.source,
+                    is_star=normalize_name(i.player) in star_names,
+                    manual=i.manual,
+                    data_as_of=i.observed_at,
                 )
                 for i in injuries[team.id]
             ],
             qb_flag=QbFlagView(player=flag.player, status=flag.status) if flag else None,
+            stars=[
+                StarPlayerView(
+                    player=star.player,
+                    minutes_per_game=star.minutes_per_game,
+                    source=star.source,
+                    data_as_of=star.observed_at,
+                )
+                for star in stars[team.id]
+            ],
         )
 
     meetings = head_to_head(results, home.id, away.id, kickoff, last_n)
@@ -311,9 +353,14 @@ async def get_context(
         head_to_head=HeadToHeadView(
             meetings=[
                 MeetingView(
-                    game_id=m.game_id, start_time=m.start_time, home=abbr[m.home_id],
-                    away=abbr[m.away_id], home_score=m.home_score, away_score=m.away_score,
-                    spread_home=m.spread_home, total=m.total,
+                    game_id=m.game_id,
+                    start_time=m.start_time,
+                    home=abbr[m.home_id],
+                    away=abbr[m.away_id],
+                    home_score=m.home_score,
+                    away_score=m.away_score,
+                    spread_home=m.spread_home,
+                    total=m.total,
                 )
                 for m in meetings
             ],

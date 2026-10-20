@@ -239,6 +239,11 @@ footer { gap: 20px; padding-top: 20px; }
 .injury-grid { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 12px; }
 .injury-list { margin: 0; padding-left: 18px; }
 .injury-list li { margin: 4px 0; }
+.injury-source { color: var(--muted); font-size: 0.82rem; }
+.slate-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 2px; }
+.slate-badge { border: 1px solid var(--secondary); border-radius: 999px; padding: 3px 8px; font: 0.7rem "DM Mono", monospace; }
+.bet-badge { color: #bfdbfe; }
+.star-badge { border-color: #f59e0b; color: #fde68a; }
 select { min-height: 39px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--surface-solid); padding: 8px 11px; }
 
 .lines-table td { min-width: 150px; }

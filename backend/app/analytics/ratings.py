@@ -13,7 +13,7 @@ from typing import Optional
 
 from app.analytics.efficiency import MetricValue
 
-# metric -> (stats.nba.com field, True when a higher value is better). Pace is ranked fastest first.
+# metric -> (stored box-score field, True when a higher value is better). Pace ranks fastest first.
 METRICS = {
     "off_rtg": ("OFF_RATING", True),
     "def_rtg": ("DEF_RATING", False),

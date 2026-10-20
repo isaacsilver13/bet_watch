@@ -8,18 +8,17 @@ Team ratings come from each game's possessions: BOS offense (110 x 100 + 113.7 x
 """
 
 import asyncio
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from app.api.slate import get_now, get_session_factory
 from app.ingest.espn import parse_injuries
-from app.ingest.nba_stats import GameLogRecord
 from app.ingest.records import GameRecord, LineRecord
 from app.ingest.seed import SEEDS, seed_teams
 from app.main import app
 from app.storage.context_repository import ContextRepository
 from app.storage.database import create_session_factory
 from app.storage.games_repository import GamesRepository
-from app.storage.models import Game
+from app.storage.models import Game, NbaTeamGameStat, Team
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -34,12 +33,28 @@ def utc(month, day, hour=0, minute=30):
 
 
 def final(espn_id, when, home, away, home_score, away_score, spread_home, total):
-    close = LineRecord("close", spread_home=spread_home, spread_home_price=-110,
-                       spread_away_price=-110, total=total, over_price=-110, under_price=-110)
+    close = LineRecord(
+        "close",
+        spread_home=spread_home,
+        spread_home_price=-110,
+        spread_away_price=-110,
+        total=total,
+        over_price=-110,
+        under_price=-110,
+    )
     return GameRecord(
-        espn_id=espn_id, season=2026, season_type="REG", week=None, start_time=when,
-        status="final", home_name=home, away_name=away, home_score=home_score,
-        away_score=away_score, neutral=False, lines=(close,),
+        espn_id=espn_id,
+        season=2026,
+        season_type="REG",
+        week=None,
+        start_time=when,
+        status="final",
+        home_name=home,
+        away_name=away,
+        home_score=home_score,
+        away_score=away_score,
+        neutral=False,
+        lines=(close,),
     )
 
 
@@ -48,16 +63,24 @@ GAMES = [
     final("2", utc(1, 14), "MIA", "DET", 105, 99, -3.0, 208.0),  # Jan 13
     final("3", utc(1, 15), "DET", "BOS", 99, 108, -2.0, 212.5),  # Jan 14
     GameRecord(
-        espn_id="4", season=2026, season_type="REG", week=None, start_time=utc(1, 16),
-        status="scheduled", home_name="MIA", away_name="BOS", home_score=None,
-        away_score=None, neutral=False,
+        espn_id="4",
+        season=2026,
+        season_type="REG",
+        week=None,
+        start_time=utc(1, 16),
+        status="scheduled",
+        home_name="MIA",
+        away_name="BOS",
+        home_score=None,
+        away_score=None,
+        neutral=False,
     ),  # Jan 15, 7:30pm Eastern
 ]
 
 
 def log(day, team, opponent, off, defense, poss, pace=100.0):
     stats = {"OFF_RATING": off, "DEF_RATING": defense, "POSS": poss, "PACE": pace, "MIN": 48.0}
-    return GameLogRecord(2026, day, team, opponent, stats)
+    return day, team, opponent, stats
 
 
 JAN10, JAN13, JAN14 = date(2026, 1, 10), date(2026, 1, 13), date(2026, 1, 14)
@@ -83,7 +106,34 @@ def _client(tmp_path, now=NOW, with_data=True) -> TestClient:
         if with_data:
             await GamesRepository(factory).upsert_games("nba", "espn", GAMES, NOW)
             repo = ContextRepository(factory)
-            await repo.save_game_log_stats("nba", LOGS, NOW)
+            async with factory() as session, session.begin():
+                teams = {
+                    row.abbr: row.id
+                    for row in (
+                        await session.scalars(select(Team).where(Team.sport == "nba"))
+                    ).all()
+                }
+                games = (await session.scalars(select(Game).where(Game.sport == "nba"))).all()
+                for index, (_, team, opponent, stats) in enumerate(LOGS):
+                    pair = {teams[team], teams[opponent]}
+                    game = next(
+                        row
+                        for row in games
+                        if {row.home_team_id, row.away_team_id} == pair and row.status == "final"
+                    )
+                    observed = game.start_time.replace(tzinfo=timezone.utc) + timedelta(hours=3)
+                    session.add(
+                        NbaTeamGameStat(
+                            game_id=game.id,
+                            team_id=teams[team],
+                            provider="espn",
+                            provider_game_id=f"context-{game.id}",
+                            provider_team_id=str(teams[team]),
+                            fingerprint=f"context-{index}",
+                            stats=stats,
+                            observed_at=observed,
+                        )
+                    )
             report = parse_injuries(load_json("espn_nba/injuries_league.json"))
             await repo.save_injuries("nba", report, datetime(2026, 1, 15, 14, tzinfo=timezone.utc))
 
@@ -116,16 +166,19 @@ def test_records_use_the_closing_lines_before_the_game(tmp_path) -> None:
     bos, mia = body["away"], body["home"]
     assert (bos["team"]["abbr"], mia["team"]["abbr"]) == ("BOS", "MIA")
     assert bos["records"]["season"] == {
-        "su": {"win": 2, "loss": 0, "push": 0}, "ats": {"win": 2, "loss": 0, "push": 0},
+        "su": {"win": 2, "loss": 0, "push": 0},
+        "ats": {"win": 2, "loss": 0, "push": 0},
         "ou": {"win": 0, "loss": 2, "push": 0},  # both games stayed under: loss = under
     }
     assert mia["records"]["season"] == {
-        "su": {"win": 1, "loss": 1, "push": 0}, "ats": {"win": 1, "loss": 1, "push": 0},
+        "su": {"win": 1, "loss": 1, "push": 0},
+        "ats": {"win": 1, "loss": 1, "push": 0},
         "ou": {"win": 0, "loss": 2, "push": 0},
     }
     meetings = body["head_to_head"]
     assert [(m["home"], m["away"], m["home_score"]) for m in meetings["meetings"]] == [
-        ("BOS", "MIA", 110)]
+        ("BOS", "MIA", 110)
+    ]
     assert meetings["home_su"] == {"win": 0, "loss": 1, "push": 0}  # MIA, home tonight, lost it
     assert meetings["home_ats"] == {"win": 0, "loss": 1, "push": 0}
 
@@ -157,9 +210,17 @@ def test_schedule_spots_count_the_games_before_tonight(tmp_path) -> None:
 def test_tomorrows_game_counts_tonights_game_that_has_not_been_played_yet(tmp_path) -> None:
     client = _client(tmp_path)
     tomorrow = GameRecord(
-        espn_id="5", season=2026, season_type="REG", week=None, start_time=utc(1, 17),
-        status="scheduled", home_name="CHA", away_name="BOS", home_score=None,
-        away_score=None, neutral=False,
+        espn_id="5",
+        season=2026,
+        season_type="REG",
+        week=None,
+        start_time=utc(1, 17),
+        status="scheduled",
+        home_name="CHA",
+        away_name="BOS",
+        home_score=None,
+        away_score=None,
+        neutral=False,
     )  # Jan 16, 7:30pm Eastern: BOS plays tonight at MIA and again tomorrow
 
     async def add() -> None:
@@ -179,7 +240,9 @@ def test_injuries_come_from_the_nba_report_and_there_is_no_quarterback_flag(tmp_
     miami = {i["player"] for i in body["home"]["injuries"]}
     assert miami  # Miami is in the fixture report
     assert {i["status"] for i in body["home"]["injuries"] + body["away"]["injuries"]} <= {
-        "Out", "Day-To-Day"}
+        "Out",
+        "Day-To-Day",
+    }
 
 
 def test_nba_has_no_primetime_and_divisional_means_the_same_division(tmp_path) -> None:

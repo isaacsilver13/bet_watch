@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TeamView(BaseModel):
@@ -31,6 +31,12 @@ class WeatherView(BaseModel):
     fetched_at: datetime
 
 
+class SlateStarFlag(BaseModel):
+    team: str
+    player: str
+    status: str
+
+
 class SlateGame(BaseModel):
     id: int
     sport: str
@@ -52,6 +58,8 @@ class SlateGame(BaseModel):
     total_move: Optional[float]
     odds_event_id: Optional[str]
     weather: Optional[WeatherView] = None  # outdoor games only
+    has_bet: bool = False
+    star_flags: list[SlateStarFlag] = Field(default_factory=list)
 
 
 class WeekRef(BaseModel):

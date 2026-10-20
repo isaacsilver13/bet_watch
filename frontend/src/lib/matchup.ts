@@ -25,6 +25,17 @@ export interface Injury {
   status: string;
   detail: string | null;
   reported_at: string | null;
+  source?: string;
+  is_star?: boolean;
+  manual?: boolean;
+  data_as_of?: string | null;
+}
+
+export interface StarPlayer {
+  player: string;
+  minutes_per_game: number | null;
+  source: string;
+  data_as_of: string;
 }
 
 export interface QbFlag { player: string; status: string }
@@ -36,6 +47,7 @@ export interface TeamContext {
   situation: Situation;
   injuries: Injury[];
   qb_flag: QbFlag | null;
+  stars?: StarPlayer[];
 }
 
 export interface Meeting {
@@ -111,7 +123,7 @@ export const METRIC_ROWS: MetricRow[] = [
   { key: "sacks_pg", label: "Sacks / game", decimals: 2 },
 ];
 
-/** NBA team ratings and four factors, from stats.nba.com game logs. */
+/** NBA box-score-derived ratings and four factors from stored completed games. */
 export const NBA_METRIC_ROWS: MetricRow[] = [
   { key: "net_rtg", label: "Net rating", decimals: 1, signed: true },
   { key: "off_rtg", label: "Offensive rating", decimals: 1 },

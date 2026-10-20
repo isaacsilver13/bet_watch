@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.domain.slate import TeamView
 
@@ -45,6 +45,17 @@ class InjuryView(BaseModel):
     status: str
     detail: Optional[str]
     reported_at: Optional[datetime]
+    source: str = "espn"
+    is_star: bool = False
+    manual: bool = False
+    data_as_of: Optional[datetime] = None
+
+
+class StarPlayerView(BaseModel):
+    player: str
+    minutes_per_game: Optional[float]
+    source: str
+    data_as_of: datetime
 
 
 class QbFlagView(BaseModel):
@@ -59,6 +70,7 @@ class TeamContext(BaseModel):
     situation: SituationView
     injuries: list[InjuryView]
     qb_flag: Optional[QbFlagView]
+    stars: list[StarPlayerView] = Field(default_factory=list)
 
 
 class MeetingView(BaseModel):

@@ -76,6 +76,19 @@ describe("NbaSlatePage", () => {
     expect(fetchDaySlate).toHaveBeenCalledWith(expect.objectContaining({ date: undefined }));
   });
 
+  it("shows recorded-bet and injured-star badges without blocking the card", async () => {
+    const flagged = {
+      ...game(4, "GSW", "NYK", "scheduled", "2026-01-16T03:00:00Z"),
+      has_bet: true,
+      star_flags: [{ team: "GSW", player: "Stephen Curry", status: "Questionable" }],
+    };
+    vi.mocked(fetchDaySlate).mockResolvedValue(day("2026-01-15", [flagged]));
+    renderAt("/nba/2026-01-15");
+    expect(await screen.findByText("Bet logged")).toBeInTheDocument();
+    expect(screen.getByText("★ GSW Stephen Curry: Questionable")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "NYK @ GSW" })).toBeInTheDocument();
+  });
+
   it("steps to the previous and next day that has games", async () => {
     vi.mocked(fetchDaySlate).mockImplementation(async ({ date } = {}) => day(date ?? "2026-01-15"));
     renderAt("/nba/2026-01-15");

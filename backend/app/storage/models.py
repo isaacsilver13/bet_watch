@@ -27,9 +27,7 @@ class ProviderRefreshRun(Base):
     sport: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     error_type: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     quota_remaining: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -92,6 +90,7 @@ class OfferObservation(Base):
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     deep_link: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False)
+
 
 class Venue(Base):
     __tablename__ = "venues"
@@ -203,6 +202,87 @@ class TeamGameStat(Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class NbaTeamGameStat(Base):
+    """Append-only NBA context observation; fingerprints make exact replays idempotent."""
+
+    __tablename__ = "nba_team_game_stats"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "provider_game_id",
+            "team_id",
+            "fingerprint",
+            name="uq_nba_team_stat_fact",
+        ),
+        Index("ix_nba_team_stats_game_observed", "game_id", "observed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), nullable=False)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_game_id: Mapped[str] = mapped_column(String(60), nullable=False)
+    provider_team_id: Mapped[str] = mapped_column(String(60), nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    stats: Mapped[dict] = mapped_column(JSON, nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class NbaPlayerGameStat(Base):
+    __tablename__ = "nba_player_game_stats"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "provider_game_id",
+            "provider_player_id",
+            "fingerprint",
+            name="uq_nba_player_stat_fact",
+        ),
+        Index("ix_nba_player_stats_team_observed", "team_id", "observed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), nullable=False)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_game_id: Mapped[str] = mapped_column(String(60), nullable=False)
+    provider_team_id: Mapped[str] = mapped_column(String(60), nullable=False)
+    provider_player_id: Mapped[str] = mapped_column(String(60), nullable=False)
+    player: Mapped[str] = mapped_column(String(160), nullable=False)
+    minutes: Mapped[float] = mapped_column(Float, nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    stats: Mapped[dict] = mapped_column(JSON, nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class NbaContextRefresh(Base):
+    __tablename__ = "nba_context_refreshes"
+    __table_args__ = (Index("ix_nba_context_refresh_game", "provider_game_id", "status"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_game_id: Mapped[str] = mapped_column(String(60), nullable=False)
+    covered_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    team_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    player_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    quota_remaining: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+
+class StarOverride(Base):
+    __tablename__ = "star_overrides"
+    __table_args__ = (Index("ix_star_overrides_team_window", "team_id", "starts_at", "ends_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
+    player: Mapped[str] = mapped_column(String(160), nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    note: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+
+
 class Injury(Base):
     """One row per reportable player per snapshot; a snapshot is every row sharing observed_at."""
 
@@ -218,6 +298,37 @@ class Injury(Base):
     source: Mapped[str] = mapped_column(String(20), nullable=False)
     reported_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class InjurySnapshot(Base):
+    """A successful poll, including the meaningful zero-row/all-clear case."""
+
+    __tablename__ = "injury_snapshots"
+    __table_args__ = (
+        UniqueConstraint("sport", "source", "observed_at", name="uq_injury_snapshot_poll"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sport: Mapped[str] = mapped_column(String(20), nullable=False)
+    source: Mapped[str] = mapped_column(String(30), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class InjuryOverride(Base):
+    __tablename__ = "injury_overrides"
+    __table_args__ = (Index("ix_injury_overrides_team_window", "team_id", "starts_at", "ends_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
+    player: Mapped[str] = mapped_column(String(160), nullable=False)
+    position: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    note: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    source: Mapped[str] = mapped_column(String(30), nullable=False, default="manual")
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class Weather(Base):

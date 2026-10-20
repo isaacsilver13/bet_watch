@@ -32,6 +32,16 @@ export function GameCard({ game }: { game: SlateGame }) {
         <h3><Link to={`/game/${game.id}`}>{game.away.abbr} @ {game.home.abbr}</Link></h3>
         <span className="slate-status">{statusText(game)}</span>
       </div>
+      {(game.has_bet || (game.star_flags?.length ?? 0) > 0) && (
+        <div className="slate-badges" aria-label="Game flags">
+          {game.has_bet && <span className="slate-badge bet-badge">Bet logged</span>}
+          {(game.star_flags ?? []).map((flag) => (
+            <span className="slate-badge star-badge" key={`${flag.team}-${flag.player}`}>
+              ★ {flag.team} {flag.player}: {flag.status}
+            </span>
+          ))}
+        </div>
+      )}
       <p className="slate-venue">{game.venue ?? "Venue TBD"}{game.neutral ? " · neutral site" : ""}</p>
       <dl className="slate-lines">
         <div><dt>Spread</dt><dd>{formatSpread(game, latest?.spread_home)}</dd></div>

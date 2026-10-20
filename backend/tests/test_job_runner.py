@@ -1,18 +1,21 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from app.jobs.runner import (
     HEARTBEAT_PROVIDER,
     JobContext,
     SlotInfo,
+    check_due,
+    due_slot_keys,
     get_slot_info,
     run_due,
+    run_once,
     update_slot,
 )
 from app.jobs.slots import CENTRAL, Slot, daily_slot, hourly_slots
 from app.storage.models import JobSlot, ProviderRefreshRun
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from tests.matchup_helpers import new_session_factory
 
@@ -54,7 +57,8 @@ async def _slot(ctx, key):
 def test_hourly_slots_cover_started_hours_in_central_time() -> None:
     slots = hourly_slots("espn_scoreboard", NOW)
     assert [s.key for s in slots] == [
-        "espn_scoreboard:2026-10-11T08", "espn_scoreboard:2026-10-11T09",
+        "espn_scoreboard:2026-10-11T08",
+        "espn_scoreboard:2026-10-11T09",
         "espn_scoreboard:2026-10-11T10",
     ]
     assert slots[-1].window_start == datetime(2026, 10, 11, 10, tzinfo=CENTRAL)
@@ -82,6 +86,48 @@ def test_done_slot_runs_once(tmp_path) -> None:
     asyncio.run(scenario())
 
 
+def test_read_only_preflight_finds_only_nonterminal_started_slots(tmp_path) -> None:
+    async def scenario() -> None:
+        ctx = await _ctx(tmp_path)
+        current = Slot(
+            "fake:current",
+            NOW.replace(minute=0),
+            NOW.replace(minute=59),
+        )
+        future = Slot(
+            "fake:future",
+            NOW.replace(minute=0) + timedelta(hours=1),
+            NOW.replace(minute=59) + timedelta(hours=1),
+        )
+        job = FakeJob([], slots=[current, future])
+
+        assert await due_slot_keys([job], ctx, NOW) == ["fake:current"]
+        assert job.calls == 0
+
+        await update_slot(ctx, "fake", "fake:current", state="done", at=NOW)
+        assert await due_slot_keys([job], ctx, NOW) == []
+        assert job.calls == 0
+
+    asyncio.run(scenario())
+
+
+def test_read_only_preflight_wakes_once_to_close_an_expired_slot(tmp_path) -> None:
+    async def scenario() -> None:
+        ctx = await _ctx(tmp_path)
+        past = Slot(
+            "fake:08",
+            datetime(2026, 10, 11, 8, tzinfo=CENTRAL),
+            datetime(2026, 10, 11, 9, tzinfo=CENTRAL),
+        )
+        job = FakeJob([], slots=[past])
+
+        assert await due_slot_keys([job], ctx, NOW) == ["fake:08"]
+        assert await run_due([job], ctx, NOW) == {"fake:08": "missed"}
+        assert await due_slot_keys([job], ctx, NOW) == []
+
+    asyncio.run(scenario())
+
+
 def test_exception_retries_then_fails_at_cap(tmp_path) -> None:
     async def scenario() -> None:
         ctx = await _ctx(tmp_path)
@@ -92,9 +138,14 @@ def test_exception_retries_then_fails_at_cap(tmp_path) -> None:
         slot = await _slot(ctx, "fake:now")
         assert (slot.state, slot.attempts) == ("failed", 2)
         async with ctx.session_factory() as session:
-            failures = (await session.scalars(select(ProviderRefreshRun).where(
-                ProviderRefreshRun.provider == "job:fake", ProviderRefreshRun.status == "failed"
-            ))).all()
+            failures = (
+                await session.scalars(
+                    select(ProviderRefreshRun).where(
+                        ProviderRefreshRun.provider == "job:fake",
+                        ProviderRefreshRun.status == "failed",
+                    )
+                )
+            ).all()
         assert len(failures) == 2 and failures[0].error_type == "RuntimeError"
 
     asyncio.run(scenario())
@@ -115,8 +166,11 @@ def test_partial_retries_until_cap(tmp_path) -> None:
 def test_past_window_is_missed_exactly_once_without_running(tmp_path) -> None:
     async def scenario() -> None:
         ctx = await _ctx(tmp_path)
-        past = Slot("fake:08", datetime(2026, 10, 11, 8, tzinfo=CENTRAL),
-                    datetime(2026, 10, 11, 9, tzinfo=CENTRAL))
+        past = Slot(
+            "fake:08",
+            datetime(2026, 10, 11, 8, tzinfo=CENTRAL),
+            datetime(2026, 10, 11, 9, tzinfo=CENTRAL),
+        )
         job = FakeJob([], slots=[past])
         assert await run_due([job], ctx, NOW) == {"fake:08": "missed"}
         assert await run_due([job], ctx, NOW) == {}
@@ -130,10 +184,55 @@ def test_heartbeat_recorded(tmp_path) -> None:
         ctx = await _ctx(tmp_path)
         await run_due([], ctx, NOW)
         async with ctx.session_factory() as session:
-            beat = await session.scalar(select(ProviderRefreshRun).where(
-                ProviderRefreshRun.provider == HEARTBEAT_PROVIDER
-            ))
+            beat = await session.scalar(
+                select(ProviderRefreshRun).where(ProviderRefreshRun.provider == HEARTBEAT_PROVIDER)
+            )
         assert beat is not None and beat.status == "succeeded"
+
+    asyncio.run(scenario())
+
+
+def test_preflight_records_a_heartbeat_even_when_nothing_is_due(tmp_path) -> None:
+    async def scenario() -> None:
+        ctx = await _ctx(tmp_path)
+        assert await check_due([], ctx, NOW) == []
+        async with ctx.session_factory() as session:
+            beat = await session.scalar(
+                select(ProviderRefreshRun).where(ProviderRefreshRun.provider == HEARTBEAT_PROVIDER)
+            )
+        assert beat is not None and beat.status == "succeeded"
+
+    asyncio.run(scenario())
+
+
+def test_overlapping_local_run_due_call_does_not_run_or_record_a_heartbeat(tmp_path) -> None:
+    async def scenario() -> None:
+        ctx = await _ctx(tmp_path)
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        class BlockingJob(FakeJob):
+            async def run(self, ctx, slot):
+                self.calls += 1
+                started.set()
+                await release.wait()
+                return "done"
+
+        job = BlockingJob([])
+        first = asyncio.create_task(run_due([job], ctx, NOW))
+        await started.wait()
+        assert await run_due([job], ctx, NOW) == {}
+        assert await run_once(job, ctx) == "busy"
+        release.set()
+        assert await first == {"fake:now": "done"}
+        assert job.calls == 1
+        async with ctx.session_factory() as session:
+            heartbeats = await session.scalar(
+                select(func.count())
+                .select_from(ProviderRefreshRun)
+                .where(ProviderRefreshRun.provider == HEARTBEAT_PROVIDER)
+            )
+        assert heartbeats == 1
 
     asyncio.run(scenario())
 
@@ -179,8 +278,11 @@ def test_raw_saved_slot_still_runs_after_its_window_closes(tmp_path) -> None:
 
     async def scenario() -> None:
         ctx = await _ctx(tmp_path)
-        past = Slot("fake:08", datetime(2026, 10, 11, 8, tzinfo=CENTRAL),
-                    datetime(2026, 10, 11, 9, tzinfo=CENTRAL))
+        past = Slot(
+            "fake:08",
+            datetime(2026, 10, 11, 8, tzinfo=CENTRAL),
+            datetime(2026, 10, 11, 9, tzinfo=CENTRAL),
+        )
         await update_slot(ctx, "fake", "fake:08", state="raw_saved", raw_path="x.gz")
         job = FakeJob(["done"], slots=[past])
         assert await run_due([job], ctx, NOW) == {"fake:08": "done"}

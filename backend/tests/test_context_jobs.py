@@ -15,7 +15,7 @@ from app.jobs.context import (
 from app.jobs.runner import JobContext
 from app.jobs.slots import CENTRAL, Slot, hourly_slots
 from app.storage.games_repository import GamesRepository
-from app.storage.models import Injury, TeamGameStat, Weather
+from app.storage.models import Injury, InjurySnapshot, TeamGameStat, Weather
 from sqlalchemy import func, select
 
 from tests.matchup_helpers import load_json, new_session_factory
@@ -105,7 +105,7 @@ def test_history_job_walks_every_season_from_2015(tmp_path, monkeypatch) -> None
     asyncio.run(scenario())
 
 
-def test_injuries_job_stores_one_snapshot_and_skips_an_empty_league(tmp_path, monkeypatch) -> None:
+def test_injuries_job_stores_an_explicit_empty_all_clear_snapshot(tmp_path, monkeypatch) -> None:
     (tmp_path / "empty").mkdir()
     expected = len(parse_injuries(load_json("espn/injuries_league.json")))
 
@@ -114,8 +114,9 @@ def test_injuries_job_stores_one_snapshot_and_skips_an_empty_league(tmp_path, mo
         assert await InjuriesJob().run(ctx, SLOT) == "done"
         assert await _count(ctx, Injury) == expected
         empty = await _ctx(tmp_path / "empty", [], monkeypatch, injuries={"injuries": []})
-        assert await InjuriesJob().run(empty, SLOT) == "empty"
+        assert await InjuriesJob().run(empty, SLOT) == "done"
         assert await _count(empty, Injury) == 0
+        assert await _count(empty, InjurySnapshot) == 1
 
     asyncio.run(scenario())
 

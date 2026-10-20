@@ -51,7 +51,8 @@ describe("OpsPage", () => {
     });
     renderPage();
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("run-due has not fired since");
+    expect(alert).toHaveTextContent("The hosted scheduler has not checked in since");
+    expect(alert).toHaveTextContent("cron-job.org and the GitHub Actions workflow");
     expect(alert).toHaveTextContent("1 paid response(s) saved but not parsed");
     expect(alert).toHaveTextContent("1 odds event(s) match no game: event:ghost");
     expect(alert).toHaveTextContent("2 finished game(s) still have no ESPN close");

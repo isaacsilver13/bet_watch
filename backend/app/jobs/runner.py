@@ -1,14 +1,16 @@
 """Run each job's due slots once. Attempts are logged; every slot has one current state."""
 
+import asyncio
 import logging
 from collections.abc import Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Protocol
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
@@ -18,6 +20,8 @@ from app.storage.models import JobSlot, ProviderRefreshRun
 
 logger = logging.getLogger(__name__)
 HEARTBEAT_PROVIDER = "run_due"
+RUN_DUE_LOCK_ID = 7_491_639_812_041_627_337
+_run_due_process_lock = asyncio.Lock()
 
 
 @dataclass
@@ -27,6 +31,9 @@ class JobContext:
     raw_dir: Path
     settings: Optional[Settings] = None
     odds: Optional[TheOddsApiClient] = None  # only built in live mode with a key
+    # A read-only scheduler preflight can plan paid slots without holding the provider key.
+    # It never calls Job.run(), so this flag cannot spend credits.
+    odds_planning_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -111,7 +118,32 @@ async def _planned_slots(job: Job, ctx: JobContext, now: datetime) -> list[Slot]
     return await planner(ctx, now) if planner else job.slots(now)
 
 
-async def run_due(jobs: Sequence[Job], ctx: JobContext, now: datetime) -> dict[str, str]:
+async def due_slot_keys(jobs: Sequence[Job], ctx: JobContext, now: datetime) -> list[str]:
+    """Return slots that would make ``run_due`` do work, without changing state.
+
+    Expired pending slots count because ``run_due`` needs one pass to mark them missed.
+    Terminal slots do not count. A raw response awaiting parsing remains due even after
+    its original window has closed.
+    """
+    due: list[str] = []
+    for job in jobs:
+        for slot in await _planned_slots(job, ctx, now):
+            if now < slot.window_start:
+                continue
+            info = await get_slot_info(ctx, job.name, slot.key)
+            if info.state not in TERMINAL_STATES:
+                due.append(slot.key)
+    return due
+
+
+async def check_due(jobs: Sequence[Job], ctx: JobContext, now: datetime) -> list[str]:
+    """Plan due work without provider calls and record that the hosted scheduler checked in."""
+    due = await due_slot_keys(jobs, ctx, now)
+    await _log_attempt(ctx, HEARTBEAT_PROVIDER, now)
+    return due
+
+
+async def _run_due_unlocked(jobs: Sequence[Job], ctx: JobContext, now: datetime) -> dict[str, str]:
     results: dict[str, str] = {}
     for job in jobs:
         for slot in await _planned_slots(job, ctx, now):
@@ -147,14 +179,53 @@ async def run_due(jobs: Sequence[Job], ctx: JobContext, now: datetime) -> dict[s
     return results
 
 
+@asynccontextmanager
+async def _scheduler_lease(ctx: JobContext):
+    """Coordinate hosted and manual work across processes when PostgreSQL is available."""
+    async with ctx.session_factory() as lease_session:
+        if lease_session.get_bind().dialect.name == "postgresql":
+            acquired = await lease_session.scalar(
+                text("SELECT pg_try_advisory_lock(:lock_id)"),
+                {"lock_id": RUN_DUE_LOCK_ID},
+            )
+            if not acquired:
+                yield False
+                return
+            try:
+                yield True
+            finally:
+                await lease_session.execute(
+                    text("SELECT pg_advisory_unlock(:lock_id)"),
+                    {"lock_id": RUN_DUE_LOCK_ID},
+                )
+            return
+
+    if _run_due_process_lock.locked():
+        yield False
+        return
+    async with _run_due_process_lock:
+        yield True
+
+
+async def run_due(jobs: Sequence[Job], ctx: JobContext, now: datetime) -> dict[str, str]:
+    """Run due work only when this caller owns the scheduler lease."""
+    async with _scheduler_lease(ctx) as acquired:
+        if not acquired:
+            return {}
+        return await _run_due_unlocked(jobs, ctx, now)
+
+
 async def run_once(job: Job, ctx: JobContext) -> str:
     """Manual run (python -m app.jobs <name>): no slot bookkeeping, attempt still logged."""
-    started_at = datetime.now(timezone.utc)
-    slot = Slot(f"{job.name}:manual:{started_at.isoformat()}", started_at, started_at)
-    try:
-        state = await job.run(ctx, slot)
-    except Exception as error:
-        await _log_attempt(ctx, f"job:{job.name}", started_at, error)
-        raise
-    await _log_attempt(ctx, f"job:{job.name}", started_at)
-    return state
+    async with _scheduler_lease(ctx) as acquired:
+        if not acquired:
+            return "busy"
+        started_at = datetime.now(timezone.utc)
+        slot = Slot(f"{job.name}:manual:{started_at.isoformat()}", started_at, started_at)
+        try:
+            state = await job.run(ctx, slot)
+        except Exception as error:
+            await _log_attempt(ctx, f"job:{job.name}", started_at, error)
+            raise
+        await _log_attempt(ctx, f"job:{job.name}", started_at)
+        return state

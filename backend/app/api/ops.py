@@ -1,7 +1,7 @@
 """Is the machine doing its job? The numbers behind the go/no-go check before real bets."""
 
 from collections import Counter
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -20,14 +20,15 @@ from app.storage.games_repository import (
     aware,
     games_for_event,
 )
-from app.storage.models import EventRecord, Game, JobSlot, ProviderRefreshRun
+from app.storage.models import EventRecord, Game, JobSlot, NbaContextRefresh, ProviderRefreshRun
 from app.storage.repository import OddsRepository
 
 router = APIRouter(prefix="/api/v1")
-HEARTBEAT_STALE_AFTER = timedelta(minutes=45)  # Task Scheduler fires every 15; three misses
+HEARTBEAT_STALE_AFTER = timedelta(minutes=45)  # cron-job.org fires every 15; three misses
 LOOKBACK = timedelta(days=7)
 SPORTS = ("nfl", "nba")
 EVENT_HORIZON = timedelta(days=10)  # the schedule is only loaded a week or two ahead
+NBA_CONTEXT_PROVIDER = "espn"
 
 
 class JobStatus(BaseModel):
@@ -38,10 +39,19 @@ class JobStatus(BaseModel):
     updated_at: datetime
 
 
+class NbaContextHealth(BaseModel):
+    requests_today: int
+    requests_today_estimated: bool
+    last_success_at: Optional[datetime]
+    last_covered_date: Optional[datetime]
+    quota_remaining: Optional[int]
+    last_error: Optional[str]
+
+
 class OpsHealth(BaseModel):
     generated_at: datetime
     run_due_last_at: Optional[datetime]
-    run_due_stale: bool  # no run-due heartbeat lately: Task Scheduler is not firing
+    run_due_stale: bool  # no preflight/run-due heartbeat lately: cron-job.org is not firing
     jobs: list[JobStatus]  # the latest slot of each job
     slots_today: dict[str, int]  # Central-time calendar day, by state
     credits_remaining: Optional[int]
@@ -49,6 +59,7 @@ class OpsHealth(BaseModel):
     unlinked_events: list[str]
     stuck_raw_saved: list[str]  # paid responses saved but not yet parsed
     finals_missing_close: int
+    nba_context: NbaContextHealth
 
 
 def _start_of_day(now: datetime) -> datetime:
@@ -131,6 +142,51 @@ async def ops_health(
                 .limit(1)
             )
         ).all()
+        provider_day_start = _start_of_day(now).astimezone(timezone.utc)
+        nba_today = (
+            await session.scalars(
+                select(NbaContextRefresh).where(
+                    NbaContextRefresh.provider == NBA_CONTEXT_PROVIDER,
+                    NbaContextRefresh.observed_at >= provider_day_start,
+                )
+            )
+        ).all()
+        nba_outcomes = (
+            await session.scalars(
+                select(NbaContextRefresh)
+                .where(
+                    NbaContextRefresh.provider == NBA_CONTEXT_PROVIDER,
+                    NbaContextRefresh.status.in_(("complete", "partial", "unmatched")),
+                )
+                .order_by(NbaContextRefresh.observed_at.desc(), NbaContextRefresh.id.desc())
+            )
+        ).all()
+        latest_outcome_by_game: dict[str, NbaContextRefresh] = {}
+        for outcome in nba_outcomes:
+            latest_outcome_by_game.setdefault(outcome.provider_game_id, outcome)
+        nba_error = next(
+            (
+                outcome
+                for outcome in latest_outcome_by_game.values()
+                if outcome.status in {"partial", "unmatched"}
+            ),
+            None,
+        )
+        nba_success = await session.scalar(
+            select(NbaContextRefresh)
+            .where(
+                NbaContextRefresh.provider == NBA_CONTEXT_PROVIDER,
+                NbaContextRefresh.status == "complete",
+            )
+            .order_by(NbaContextRefresh.observed_at.desc())
+            .limit(1)
+        )
+        nba_job_run = await session.scalar(
+            select(ProviderRefreshRun)
+            .where(ProviderRefreshRun.provider == "job:nba_team_stats")
+            .order_by(ProviderRefreshRun.completed_at.desc())
+            .limit(1)
+        )
     unlinked: list[str] = []
     missing_closes = 0
     for sport in SPORTS:
@@ -162,4 +218,16 @@ async def ops_health(
         unlinked_events=unlinked,
         stuck_raw_saved=sorted(stuck),
         finals_missing_close=missing_closes,
+        nba_context=NbaContextHealth(
+            requests_today=sum(row.status == "requested" for row in nba_today),
+            requests_today_estimated=False,
+            last_success_at=aware(nba_success.observed_at) if nba_success else None,
+            last_covered_date=aware(nba_success.covered_date) if nba_success else None,
+            quota_remaining=None,
+            last_error=(
+                nba_job_run.error_message
+                if nba_job_run and nba_job_run.status == "failed"
+                else (nba_error.error_message if nba_error else None)
+            ),
+        ),
     )

@@ -23,6 +23,8 @@ export interface SlateWeather {
   fetched_at: string;
 }
 
+export interface SlateStarFlag { team: string; player: string; status: string }
+
 export type LineKind = "open" | "current" | "close";
 
 export interface SlateGame {
@@ -46,6 +48,8 @@ export interface SlateGame {
   total_move: number | null;
   odds_event_id: string | null;
   weather: SlateWeather | null;
+  has_bet?: boolean;
+  star_flags?: SlateStarFlag[];
 }
 
 export interface WeekRef { season_type: string; week: number }
