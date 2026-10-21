@@ -428,10 +428,10 @@ def test_stored_games_drop_off_the_board_once_finished(
     assert bool(body["events"]) is listed
 
 
-def test_fixture_mode_keeps_its_past_dated_sample_games(monkeypatch) -> None:
-    long_ago = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    monkeypatch.setattr("app.api.routes.provider", RecordingProvider())
-    monkeypatch.setattr("app.api.routes.repository", SavedRepository(_saved_snapshot(long_ago)))
+def test_fixture_mode_still_loads_its_free_sample_board_on_open(monkeypatch) -> None:
+    # Fixture games have fixed past dates and cost nothing, so no stored-read or filter here.
+    monkeypatch.setattr("app.api.routes.provider", FixtureOddsProvider())
+    monkeypatch.setattr("app.api.routes.repository", None)
 
     body = client.get("/api/v1/odds?sport=nfl").json()
 

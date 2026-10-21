@@ -238,16 +238,16 @@ async def get_odds(
             force_refresh = include_props = False
             response.headers["X-Refresh-Ignored"] = reason
     quota_remaining = getattr(provider, "quota_remaining", None) if is_admin else None
-    if not force_refresh and not include_props:
+    live = settings.provider_mode is ProviderMode.LIVE
+    if live and not force_refresh and not include_props:
         # Opening the board never spends: the scheduled odds_snapshot job (or a manual
         # refresh) writes the snapshot, and a plain read only serves what is stored.
+        # Fixture mode costs nothing, so it keeps fetching its sample board below.
         if repository is not None:
             saved = await repository.latest_comparisons(provider.name, sport)
-            if settings.provider_mode is ProviderMode.LIVE:
-                # The store keeps OBSERVATION_RETENTION_DAYS of games; list only those not over.
-                # Fixture sample games have fixed past dates, so fixture mode keeps them all.
-                cutoff = started_at - GAME_OVER_AFTER
-                saved = [c for c in saved if _aware(c.event.start_time) > cutoff]
+            # The store keeps OBSERVATION_RETENTION_DAYS of games; list only those not over.
+            cutoff = started_at - GAME_OVER_AFTER
+            saved = [c for c in saved if _aware(c.event.start_time) > cutoff]
         else:
             saved = getattr(provider, "cached_comparisons", lambda _sport: [])(sport)
         status = provider.status

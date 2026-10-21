@@ -24,10 +24,11 @@ still refreshes on demand.
 
 1. **Turn the scheduler on** (owner): point `scripts/register_run_due_task.ps1 -RepoRoot` at a
    checkout on `master` with its own `.venv`, `.env` and `alembic upgrade head`.
-2. **No spend on open.** `GET /api/v1/odds` without `force_refresh`/`include_props` no longer
-   refreshes from the provider when the stored snapshot is over a day old. It serves
+2. **No spend on open.** In live mode, `GET /api/v1/odds` without `force_refresh`/`include_props`
+   no longer refreshes from the provider when the stored snapshot is over a day old. It serves
    `OddsRepository.latest_comparisons` (which `OddsSnapshotJob` writes), or the in-memory board when
-   persistence is off.
+   persistence is off. Fixture mode costs nothing and still fetches its sample board, which keeps
+   the persistence-off browser smoke test's board populated.
 3. **Buttons work on the owner's machine.** `_may_spend` moved from `api/lines.py` to `api/routes.py`
    and now gates `force_refresh`/`include_props` and `capabilities.public_expensive_refresh`. The
    board's on-load fetch no longer sends `include_props`; props load with "Refresh odds". Quota
@@ -38,8 +39,8 @@ still refreshes on demand.
 ## Verification (2026-10-21)
 
 - `pytest`: 450 passed (`OddsRepository.last_success_at` and its test went with the daily gate).
-  In live mode the stored board drops games that started more than 4 hours ago (the store keeps 90
-  days); fixture mode keeps its past-dated sample games. New tests in `backend/tests/test_api.py`: a plain GET serves the stored
+  The stored board drops games that started more than 4 hours ago (the store keeps 90 days); fixture
+  mode never takes that path, so its past-dated sample games still show. New tests in `backend/tests/test_api.py`: a plain GET serves the stored
   snapshot and never calls the provider (with and without a database); a refresh stays in memory with
   persistence off; force refresh is honored on loopback with no secret; a forwarded force refresh never
   reaches the provider; the capability is true on loopback with no secret, false with
