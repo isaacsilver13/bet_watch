@@ -43,9 +43,11 @@ decides what to do with it. Analysis here is statistically honest context, not b
    `python -m app.jobs weather`
 5. `uvicorn app.main:app --app-dir backend --reload --port 8000`, and `npm run dev` in `frontend/`
 6. Open `http://localhost:5173/nfl`. The odds board is at `/odds`.
-7. Optional: `powershell -ExecutionPolicy Bypass -File scripts/register_run_due_task.ps1` runs
-   `python -m app.jobs run-due` every 15 minutes while the PC is on. Hours the PC was off are
-   marked `missed` once and never retried.
+7. `powershell -ExecutionPolicy Bypass -File scripts/register_run_due_task.ps1 -RepoRoot <checkout>`
+   runs `python -m app.jobs run-due` every 15 minutes while the PC is on. This is what keeps odds
+   current: opening a page never calls the Odds API, it only reads what the scheduled
+   `odds_snapshot` jobs (or a Refresh button) stored. Hours the PC was off are marked `missed`
+   once and never retried.
 
 Click a game on the slate to open its matchup page (`/game/<id>`): records against the spread,
 season efficiency with league ranks, rest and travel, injuries (with a flag when last week's
@@ -178,17 +180,20 @@ The API surface is intentionally read-only:
 - `GET /api/v1/odds?sport=...&event_id=...&market_type=...&force_refresh=true`
 - `GET /api/v1/history?event_id=<canonical-id>&market_type=<market>&limit=...`
 
-When the server reports that public expensive refresh is safe (fixture mode), the comparison
-board includes refresh actions for the board and individual events. Live public clients use the
-server cache instead.
+A plain `GET /odds` never calls the provider: it serves the newest stored snapshot of each
+event (written by the scheduled `odds_snapshot` jobs or a manual refresh), or, with persistence
+off, the last board fetched in this process. When `/status` reports
+`capabilities.public_expensive_refresh` (the same rule as the matchup page's "Refresh prices":
+the admin token, or the owner's own machine), the board shows "Refresh odds" and per-event
+"Refresh event" buttons. Player props load with "Refresh odds" while a prop market is selected.
 
 ### Paid-request controls
 
 `force_refresh=true` and `include_props=true` can spend provider quota, so they only
-take effect with the `X-Admin-Token` header matching `ADMIN_REFRESH_SECRET`. Anonymous
-requests are still answered (200) from the cache / last saved snapshot, with an
-`X-Refresh-Ignored: unauthorized` response header. In live mode with no secret
-configured these actions are disabled. Admin refreshes are throttled per client and by a
+take effect with the `X-Admin-Token` header matching `ADMIN_REFRESH_SECRET`, or, when no secret
+is set, from loopback with no `X-Forwarded-For` / `Fly-Client-IP` header (the owner's machine).
+Other requests are still answered (200) from the stored snapshot, with an
+`X-Refresh-Ignored: unauthorized` response header. Allowed refreshes are throttled per client and by a
 global budget (`ADMIN_REFRESH_BUDGET` per `ADMIN_REFRESH_BUDGET_WINDOW_SECONDS`, both
 process-local); throttled calls get `X-Refresh-Ignored: throttled`. `/health/errors`
 (redacted) and quota figures require the same header; `/health` and `/status` stay public.
