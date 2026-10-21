@@ -1,7 +1,7 @@
 import hmac
 import logging
 from collections.abc import Sequence
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
@@ -95,6 +95,7 @@ if settings.persistence_enabled:
 _client_limiters: dict[str, SlidingWindowLimiter] = {}
 _CLIENT_LIMIT = 2
 _CLIENT_WINDOW_SECONDS = 600
+LOOPBACK = ("127.0.0.1", "::1")
 _budget = SlidingWindowLimiter(
     settings.admin_refresh_budget, settings.admin_refresh_budget_window_seconds
 )
@@ -111,6 +112,19 @@ def _is_admin(request: Request) -> bool:
         return settings.provider_mode is ProviderMode.FIXTURE
     supplied = request.headers.get("x-admin-token")
     return bool(supplied) and hmac.compare_digest(supplied.encode(), secret.encode())
+
+
+def _may_spend(request: Request) -> bool:
+    """Admin by the usual rule, or, when no admin secret is set, the owner's own machine.
+
+    The browser never holds an admin token, and this app is local-only: its Vite dev proxy
+    reaches the API from loopback. A request relayed by anything else carries a forwarding
+    header (or a non-loopback address) and still needs the token."""
+    if _is_admin(request):
+        return True
+    forwarded = request.headers.get("x-forwarded-for") or request.headers.get("fly-client-ip")
+    local = request.client is not None and request.client.host in LOOPBACK
+    return not settings.admin_refresh_secret and local and not forwarded
 
 
 def _client_key(request: Request) -> str:
@@ -134,7 +148,7 @@ async def health() -> dict[str, str]:
 
 
 @router.get("/status")
-async def status() -> dict[str, object]:
+async def status(request: Request) -> dict[str, object]:
     provider_status = provider.status
     return {
         "status": "unconfigured" if provider_status == "not_configured" else "ok",
@@ -148,12 +162,9 @@ async def status() -> dict[str, object]:
             "bookmakers": list(settings.odds_bookmakers),
         },
         "capabilities": {
-            # A browser must never receive ADMIN_REFRESH_SECRET. Fixture mode is the only
-            # environment where anonymous expensive requests are safe and intentionally allowed.
-            "public_expensive_refresh": (
-                settings.provider_mode is ProviderMode.FIXTURE
-                and not settings.admin_refresh_secret
-            ),
+            # A browser must never receive ADMIN_REFRESH_SECRET; the refresh buttons show
+            # only where a refresh would be honored (the owner's machine, or fixture mode).
+            "public_expensive_refresh": _may_spend(request),
         },
         "prediction_markets": {
             "kalshi_enabled": kalshi is not None,
@@ -207,7 +218,7 @@ async def get_odds(
     started_at = datetime.now(timezone.utc)
     is_admin = _is_admin(request)
     if force_refresh or include_props:
-        if not is_admin:
+        if not _may_spend(request):
             reason = "unauthorized"
         elif not _allow_expensive_refresh(request):
             reason = "throttled"
@@ -225,38 +236,31 @@ async def get_odds(
             force_refresh = include_props = False
             response.headers["X-Refresh-Ignored"] = reason
     quota_remaining = getattr(provider, "quota_remaining", None) if is_admin else None
-    if not force_refresh and not include_props and repository is not None and sport is not None:
-        # Daily gate: the in-memory cache dies whenever Fly stops the machine, so
-        # the last successful refresh recorded in the database is what actually
-        # limits how often we spend provider quota. Manual refresh bypasses it.
-        last_success = await repository.last_success_at(provider.name, sport)
-        if last_success is not None:
-            last_success = _aware(last_success)
-            if started_at - last_success < timedelta(seconds=settings.cache_ttl_seconds):
-                saved = await repository.latest_comparisons(provider.name, sport)
-                if saved:
-                    logger.info(
-                        "odds served from saved snapshot source=%s sport=%s games=%d age_s=%d",
-                        provider.name,
-                        sport.value,
-                        len(saved),
-                        (started_at - last_success).total_seconds(),
-                    )
-                    return ComparisonResponse(
-                        generated_at=started_at,
-                        provider_status={provider.name: "configured"},
-                        provider_details={
-                            provider.name: ProviderDetails(
-                                status="configured",
-                                cache_hit=True,
-                                last_refreshed_at=last_success,
-                                quota_remaining=quota_remaining,
-                            )
-                        },
-                        events=scope_comparisons(
-                            [canonicalize_comparison(c) for c in saved], event_id, market_type
-                        ),
-                    )
+    if not force_refresh and not include_props:
+        # Opening the board never spends: the scheduled odds_snapshot job (or a manual
+        # refresh) writes the snapshot, and a plain read only serves what is stored.
+        if repository is not None:
+            saved = await repository.latest_comparisons(provider.name, sport)
+        else:
+            saved = getattr(provider, "cached_comparisons", lambda _sport: [])(sport)
+        status = provider.status
+        return ComparisonResponse(
+            generated_at=started_at,
+            provider_status={provider.name: status},
+            provider_details={
+                provider.name: ProviderDetails(
+                    status=status,
+                    cache_hit=True,
+                    stale=status == "stale",
+                    last_refreshed_at=_newest_observation(saved),
+                    error_type=getattr(provider, "last_error_type", None),
+                    quota_remaining=quota_remaining,
+                )
+            },
+            events=scope_comparisons(
+                [canonicalize_comparison(c) for c in saved], event_id, market_type
+            ),
+        )
     provider_error: Optional[OddsProviderError] = None
     try:
         comparisons = await provider.get_comparisons(

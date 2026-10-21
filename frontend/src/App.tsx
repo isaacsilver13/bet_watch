@@ -185,10 +185,8 @@ function App() {
     const controller = new AbortController();
     setOddsLoading(true);
     setOddsError(null);
-    fetchOdds(sport, {
-      includeProps: needsPlayerProps && canExpensiveRefresh,
-      signal: controller.signal,
-    }).then(({ data: nextData, refreshIgnored }) => {
+    // Opening the board only reads the stored snapshot; player props arrive with "Refresh odds".
+    fetchOdds(sport, { signal: controller.signal }).then(({ data: nextData, refreshIgnored }) => {
       if (controller.signal.aborted) return;
       setOddsBySport((current) => ({ ...current, [sport]: nextData }));
       setRefreshNotice(refreshIgnored ? `Provider ignored the request: ${refreshIgnored}.` : null);
@@ -199,7 +197,7 @@ function App() {
       if (!controller.signal.aborted) setOddsLoading(false);
     });
     return () => controller.abort();
-  }, [sport, needsPlayerProps, canExpensiveRefresh]);
+  }, [sport]);
 
   useEffect(() => {
     if (!data) return;

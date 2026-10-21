@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 from app.config import ProviderMode, Settings
-from app.domain.models import MarketType, Sport
+from app.domain.models import MarketType
 from app.providers.fixture import FixtureOddsProvider
 from app.storage.database import create_engine, create_schema, create_session_factory
 from app.storage.repository import OddsRepository
@@ -145,36 +145,5 @@ def test_latest_comparisons_is_empty_when_nothing_was_ever_stored() -> None:
         repository = OddsRepository(create_session_factory(engine))
 
         assert await repository.latest_comparisons("the_odds_api", sport=None) == []
-
-    asyncio.run(scenario())
-
-
-def test_last_success_at_tracks_the_newest_successful_refresh_per_sport() -> None:
-    async def scenario() -> None:
-        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-        await create_schema(engine)
-        repository = OddsRepository(create_session_factory(engine))
-        assert await repository.last_success_at("fixture", Sport.NFL) is None
-
-        earlier = datetime.now(timezone.utc) - timedelta(hours=5)
-        later = datetime.now(timezone.utc) - timedelta(hours=1)
-        await repository.record_comparisons(
-            provider="fixture", comparisons=[], started_at=earlier, completed_at=earlier,
-            sport=Sport.NFL,
-        )
-        await repository.record_comparisons(
-            provider="fixture", comparisons=[], started_at=later, completed_at=later,
-            sport=Sport.NFL,
-        )
-        await repository.record_refresh_failure(
-            provider="fixture", started_at=datetime.now(timezone.utc),
-            completed_at=datetime.now(timezone.utc), error_type="upstream_error",
-            error_message="boom", sport=Sport.NFL,
-        )
-
-        newest = await repository.last_success_at("fixture", Sport.NFL)
-        assert newest is not None
-        assert newest.replace(tzinfo=timezone.utc) == later  # failures don't count
-        assert await repository.last_success_at("fixture", Sport.NBA) is None
 
     asyncio.run(scenario())

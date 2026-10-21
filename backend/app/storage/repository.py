@@ -244,21 +244,6 @@ class OddsRepository:
                 for row in rows
             ]
 
-    async def last_success_at(self, provider: str, sport: Optional[Sport]) -> Optional[datetime]:
-        """When the provider last refreshed this sport successfully (None if never)."""
-        async with self.session_factory() as session:
-            sport_filter = (
-                ProviderRefreshRun.sport == sport.value
-                if sport
-                else ProviderRefreshRun.sport.is_(None)
-            )
-            query = select(func.max(ProviderRefreshRun.completed_at)).where(
-                ProviderRefreshRun.provider == provider,
-                ProviderRefreshRun.status == "succeeded",
-                sport_filter,
-            )
-            return await session.scalar(query)
-
     async def latest_comparisons(
         self, provider: str, sport: Optional[Sport]
     ) -> list[EventComparison]:
