@@ -1,7 +1,7 @@
 import hmac
 import logging
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
@@ -96,6 +96,8 @@ _client_limiters: dict[str, SlidingWindowLimiter] = {}
 _CLIENT_LIMIT = 2
 _CLIENT_WINDOW_SECONDS = 600
 LOOPBACK = ("127.0.0.1", "::1")
+# ponytail: a fixed window, not game status; read games.status if overtime-heavy games vanish early.
+GAME_OVER_AFTER = timedelta(hours=4)  # longer than an NFL or NBA game, including overtime
 _budget = SlidingWindowLimiter(
     settings.admin_refresh_budget, settings.admin_refresh_budget_window_seconds
 )
@@ -241,6 +243,11 @@ async def get_odds(
         # refresh) writes the snapshot, and a plain read only serves what is stored.
         if repository is not None:
             saved = await repository.latest_comparisons(provider.name, sport)
+            if settings.provider_mode is ProviderMode.LIVE:
+                # The store keeps OBSERVATION_RETENTION_DAYS of games; list only those not over.
+                # Fixture sample games have fixed past dates, so fixture mode keeps them all.
+                cutoff = started_at - GAME_OVER_AFTER
+                saved = [c for c in saved if _aware(c.event.start_time) > cutoff]
         else:
             saved = getattr(provider, "cached_comparisons", lambda _sport: [])(sport)
         status = provider.status

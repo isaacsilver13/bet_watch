@@ -37,7 +37,9 @@ still refreshes on demand.
 
 ## Verification (2026-10-21)
 
-- `pytest`: 444 passed (`OddsRepository.last_success_at` and its test went with the daily gate). New tests in `backend/tests/test_api.py`: a plain GET serves the stored
+- `pytest`: 450 passed (`OddsRepository.last_success_at` and its test went with the daily gate).
+  In live mode the stored board drops games that started more than 4 hours ago (the store keeps 90
+  days); fixture mode keeps its past-dated sample games. New tests in `backend/tests/test_api.py`: a plain GET serves the stored
   snapshot and never calls the provider (with and without a database); a refresh stays in memory with
   persistence off; force refresh is honored on loopback with no secret; a forwarded force refresh never
   reaches the provider; the capability is true on loopback with no secret, false with

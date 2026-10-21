@@ -182,7 +182,8 @@ The API surface is intentionally read-only:
 
 A plain `GET /odds` never calls the provider: it serves the newest stored snapshot of each
 event (written by the scheduled `odds_snapshot` jobs or a manual refresh), or, with persistence
-off, the last board fetched in this process. When `/status` reports
+off, the last board fetched in this process. In live mode, games that started more than 4 hours
+ago are left off. When `/status` reports
 `capabilities.public_expensive_refresh` (the same rule as the matchup page's "Refresh prices":
 the admin token, or the owner's own machine), the board shows "Refresh odds" and per-event
 "Refresh event" buttons. Player props load with "Refresh odds" while a prop market is selected.

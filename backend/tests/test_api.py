@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from app.api.routes import build_provider
@@ -358,11 +358,16 @@ class RecordingProvider(FailingProvider):
         return await super().get_comparisons(**kwargs)
 
 
-def _saved_snapshot(observed_at):
+def _saved_snapshot(observed_at, start_time=None):
     saved = asyncio.run(FixtureOddsProvider().get_comparisons())
     return [
         c.model_copy(
-            update={"offers": [o.model_copy(update={"observed_at": observed_at}) for o in c.offers]}
+            update={
+                "event": c.event.model_copy(
+                    update={"start_time": start_time or c.event.start_time}
+                ),
+                "offers": [o.model_copy(update={"observed_at": observed_at}) for o in c.offers],
+            }
         )
         for c in saved
     ]
@@ -391,8 +396,9 @@ def test_opening_the_board_serves_the_stored_snapshot_without_calling_the_provid
     monkeypatch, live
 ) -> None:
     observed_at = datetime(2026, 10, 21, 15, 0, tzinfo=timezone.utc)
+    kickoff = datetime.now(timezone.utc) + timedelta(hours=2)
     provider = RecordingProvider()
-    repository = SavedRepository(_saved_snapshot(observed_at))
+    repository = SavedRepository(_saved_snapshot(observed_at, kickoff))
     monkeypatch.setattr("app.api.routes.provider", provider)
     monkeypatch.setattr("app.api.routes.repository", repository)
 
@@ -404,6 +410,32 @@ def test_opening_the_board_serves_the_stored_snapshot_without_calling_the_provid
     assert details["last_refreshed_at"].startswith("2026-10-21T15:00:00")
     assert details["stale"] is False
     assert repository.calls == []  # a read records nothing
+
+
+@pytest.mark.parametrize(
+    ("started_hours_ago", "listed"), [(-2, True), (1, True), (3.9, True), (4.1, False), (48, False)]
+)
+def test_stored_games_drop_off_the_board_once_finished(
+    monkeypatch, live, started_hours_ago, listed
+) -> None:
+    start = datetime.now(timezone.utc) - timedelta(hours=started_hours_ago)
+    saved = _saved_snapshot(datetime.now(timezone.utc), start)
+    monkeypatch.setattr("app.api.routes.provider", RecordingProvider())
+    monkeypatch.setattr("app.api.routes.repository", SavedRepository(saved))
+
+    body = client.get("/api/v1/odds?sport=nfl").json()
+
+    assert bool(body["events"]) is listed
+
+
+def test_fixture_mode_keeps_its_past_dated_sample_games(monkeypatch) -> None:
+    long_ago = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    monkeypatch.setattr("app.api.routes.provider", RecordingProvider())
+    monkeypatch.setattr("app.api.routes.repository", SavedRepository(_saved_snapshot(long_ago)))
+
+    body = client.get("/api/v1/odds?sport=nfl").json()
+
+    assert body["events"]
 
 
 def test_opening_the_board_without_a_database_never_calls_the_provider(
