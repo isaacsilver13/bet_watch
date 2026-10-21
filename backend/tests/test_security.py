@@ -59,24 +59,23 @@ def live(monkeypatch):
 
 
 def test_anonymous_force_refresh_and_props_do_not_reach_the_provider(live):
-    client.get("/api/v1/odds?sport=nfl")  # warm cache: 1 call
-    assert len(live.calls) == 1
+    client.get("/api/v1/odds?sport=nfl")  # opening the board never fetches
+    assert len(live.calls) == 0
     for qs in ("force_refresh=true", "include_props=true", "force_refresh=true&include_props=true"):
         r = client.get(f"/api/v1/odds?sport=nfl&{qs}")
         assert r.status_code == 200
         assert r.headers["X-Refresh-Ignored"] == "unauthorized"
-    assert len(live.calls) == 1
+    assert len(live.calls) == 0
 
 
 def test_wrong_admin_token_is_treated_as_anonymous(live):
-    client.get("/api/v1/odds?sport=nfl")
     r = client.get("/api/v1/odds?sport=nfl&force_refresh=true", headers={"X-Admin-Token": "nope"})
     assert r.headers["X-Refresh-Ignored"] == "unauthorized"
-    assert len(live.calls) == 1
+    assert len(live.calls) == 0
 
 
 def test_varying_query_params_does_not_mint_new_upstream_calls(live):
-    client.get("/api/v1/odds?sport=nfl")
+    client.get("/api/v1/odds?sport=nfl&force_refresh=true", headers=ADMIN)
     for market in ("moneyline", "spread", "total"):
         client.get(f"/api/v1/odds?sport=nfl&market_type={market}")
     client.get("/api/v1/odds?sport=nfl&event_id=event:doesnotexist")
@@ -102,13 +101,16 @@ def test_global_budget_caps_refreshes_across_clients(live):
     assert len(live.calls) == 3  # budget=3; the fourth is served from cache
 
 
-def test_live_mode_without_a_secret_fails_closed(live, monkeypatch):
+def test_live_mode_without_a_secret_spends_only_from_loopback(live, monkeypatch):
     from app.api import routes
 
     monkeypatch.setattr(routes, "settings", replace(routes.settings, admin_refresh_secret=None))
-    client.get("/api/v1/odds?sport=nfl")
-    r = client.get("/api/v1/odds?sport=nfl&force_refresh=true", headers=ADMIN)
-    assert r.headers["X-Refresh-Ignored"] == "unauthorized"
+    remote = TestClient(app, client=("203.0.113.9", 50000))
+    r = remote.get("/api/v1/odds?sport=nfl&force_refresh=true", headers=ADMIN)
+    assert r.status_code == 403
+    assert len(live.calls) == 0
+    r = client.get("/api/v1/odds?sport=nfl&force_refresh=true")
+    assert "X-Refresh-Ignored" not in r.headers
     assert len(live.calls) == 1
 
 
@@ -124,6 +126,7 @@ def test_quota_hidden_from_anonymous_visible_to_admin(live):
 def test_health_and_cached_reads_stay_public(live):
     assert client.get("/api/v1/health").status_code == 200
     assert client.get("/api/v1/status").status_code == 200
+    client.get("/api/v1/odds?sport=nfl&force_refresh=true", headers=ADMIN)
     r = client.get("/api/v1/odds?sport=nfl")
     assert r.status_code == 200 and r.json()["events"]
 

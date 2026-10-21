@@ -75,6 +75,11 @@ class CachedOddsProvider:
                 seen.update({c.event.id: c.event for c in comparisons})
         return list(seen.values())
 
+    def cached_comparisons(self, sport: Optional[Sport]) -> list[EventComparison]:
+        """The last board fetched for `sport`, if any. Never fetches (no quota spend)."""
+        cached = self._cache.get((sport, None, None, False))
+        return list(cached[1]) if cached else []
+
     async def get_comparisons(
         self,
         sport: Optional[Sport] = None,

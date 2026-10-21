@@ -35,9 +35,6 @@ class SpyRepository:
     async def latest_comparisons(self, provider, sport):
         return []
 
-    async def last_success_at(self, provider, sport):
-        return None
-
 
 class FailingProvider:
     name = "failing"
@@ -85,7 +82,7 @@ def test_status_reports_fixture_cache_after_odds_refresh(monkeypatch) -> None:
     cached = CachedOddsProvider(fixture, ttl_seconds=60)
     monkeypatch.setattr("app.api.routes.provider", cached)
 
-    odds_response = client.get("/api/v1/odds", params={"sport": "nfl"})
+    odds_response = client.get("/api/v1/odds", params={"sport": "nfl", "force_refresh": "true"})
     status_response = client.get("/api/v1/status")
 
     assert odds_response.status_code == 200
@@ -178,7 +175,7 @@ def test_settings_load_dotenv_for_local_live_configuration(monkeypatch, tmp_path
 def test_fixture_provider_reports_configured_status(monkeypatch) -> None:
     monkeypatch.setattr("app.api.routes.provider", FixtureOddsProvider())
 
-    response = client.get("/api/v1/odds", params={"sport": "nfl"})
+    response = client.get("/api/v1/odds", params={"sport": "nfl", "force_refresh": "true"})
 
     assert response.status_code == 200
     assert response.json()["provider_status"] == {"fixture": "configured"}
@@ -190,7 +187,7 @@ def test_odds_route_scopes_force_refresh_to_event_market(monkeypatch) -> None:
     monkeypatch.setattr("app.api.routes.provider", FixtureOddsProvider())
     monkeypatch.setattr("app.api.routes.repository", None)
 
-    initial = client.get("/api/v1/odds", params={"sport": "nfl"}).json()
+    initial = client.get("/api/v1/odds", params={"sport": "nfl", "force_refresh": "true"}).json()
     event_id = initial["events"][0]["event"]["id"]
     response = client.get(
         "/api/v1/odds",
@@ -215,7 +212,7 @@ def test_odds_route_scopes_alternate_spreads(monkeypatch) -> None:
 
     response = client.get(
         "/api/v1/odds",
-        params={"sport": "nfl", "market_type": "alternate_spread"},
+        params={"sport": "nfl", "market_type": "alternate_spread", "force_refresh": "true"},
     )
 
     assert response.status_code == 200
@@ -231,7 +228,7 @@ def test_odds_route_persists_fixture_comparison(monkeypatch) -> None:
     monkeypatch.setattr("app.api.routes.provider", FixtureOddsProvider())
     monkeypatch.setattr("app.api.routes.repository", repository)
 
-    response = client.get("/api/v1/odds", params={"sport": "nba"})
+    response = client.get("/api/v1/odds", params={"sport": "nba", "force_refresh": "true"})
 
     assert response.status_code == 200
     assert response.json()["events"]
@@ -243,7 +240,7 @@ def test_odds_route_returns_typed_provider_error(monkeypatch) -> None:
     monkeypatch.setattr("app.api.routes.provider", FailingProvider())
     monkeypatch.setattr("app.api.routes.repository", None)
 
-    response = client.get("/api/v1/odds", params={"sport": "nfl"})
+    response = client.get("/api/v1/odds", params={"sport": "nfl", "force_refresh": "true"})
 
     assert response.status_code == 200
     assert response.json()["events"] == []
@@ -256,7 +253,7 @@ def test_odds_route_records_failed_refresh_separately(monkeypatch) -> None:
     monkeypatch.setattr("app.api.routes.provider", FailingProvider())
     monkeypatch.setattr("app.api.routes.repository", repository)
 
-    response = client.get("/api/v1/odds", params={"sport": "nfl"})
+    response = client.get("/api/v1/odds", params={"sport": "nfl", "force_refresh": "true"})
 
     assert response.status_code == 200
     assert len(repository.calls) == 1
@@ -268,7 +265,9 @@ def test_odds_route_include_props_returns_player_prop_offers(monkeypatch) -> Non
     monkeypatch.setattr("app.api.routes.provider", FixtureOddsProvider())
     monkeypatch.setattr("app.api.routes.repository", None)
 
-    without_props = client.get("/api/v1/odds", params={"sport": "nba"}).json()
+    without_props = client.get(
+        "/api/v1/odds", params={"sport": "nba", "force_refresh": "true"}
+    ).json()
     with_props = client.get(
         "/api/v1/odds", params={"sport": "nba", "include_props": "true"}
     ).json()
@@ -321,7 +320,7 @@ def test_odds_route_serves_last_saved_snapshot_when_provider_fails(monkeypatch) 
     monkeypatch.setattr("app.api.routes.provider", FailingProvider())
     monkeypatch.setattr("app.api.routes.repository", SavedSnapshotRepository())
 
-    response = client.get("/api/v1/odds")
+    response = client.get("/api/v1/odds?force_refresh=true")
 
     assert response.status_code == 200
     body = response.json()
@@ -339,7 +338,7 @@ def test_odds_route_reports_error_when_provider_fails_and_nothing_was_saved(
     monkeypatch.setattr("app.api.routes.provider", FailingProvider())
     monkeypatch.setattr("app.api.routes.repository", SpyRepository())
 
-    body = client.get("/api/v1/odds").json()
+    body = client.get("/api/v1/odds?force_refresh=true").json()
 
     assert body["events"] == []
     assert body["provider_status"]["failing"] == "error"
@@ -359,67 +358,152 @@ class RecordingProvider(FailingProvider):
         return await super().get_comparisons(**kwargs)
 
 
-def _saved_snapshot(observed_at):
+def _saved_snapshot(observed_at, start_time=None):
     saved = asyncio.run(FixtureOddsProvider().get_comparisons())
     return [
         c.model_copy(
-            update={"offers": [o.model_copy(update={"observed_at": observed_at}) for o in c.offers]}
+            update={
+                "event": c.event.model_copy(
+                    update={"start_time": start_time or c.event.start_time}
+                ),
+                "offers": [o.model_copy(update={"observed_at": observed_at}) for o in c.offers],
+            }
         )
         for c in saved
     ]
 
 
-class DailyGateRepository(SpyRepository):
-    def __init__(self, last_success, saved) -> None:
+class SavedRepository(SpyRepository):
+    def __init__(self, saved) -> None:
         super().__init__()
-        self.last_success = last_success
         self.saved = saved
-
-    async def last_success_at(self, provider, sport):
-        return self.last_success
 
     async def latest_comparisons(self, provider, sport):
         return self.saved
 
 
-def _gate(monkeypatch, age: timedelta, ttl_seconds: int = 86400):
-    now = datetime.now(timezone.utc)
-    provider = RecordingProvider()
-    repository = DailyGateRepository(now - age, _saved_snapshot(now - age))
-    monkeypatch.setattr("app.api.routes.provider", provider)
-    monkeypatch.setattr("app.api.routes.repository", repository)
+@pytest.fixture
+def live(monkeypatch):
+    """Live mode with no admin secret: the owner's local setup."""
     monkeypatch.setattr(
         "app.api.routes.settings",
-        replace(load_settings(), cache_ttl_seconds=ttl_seconds),
+        replace(load_settings(), provider_mode=ProviderMode.LIVE, admin_refresh_secret=None),
     )
-    return provider, repository
+    monkeypatch.setattr("app.api.routes._client_limiters", {})
 
 
-def test_recent_saved_refresh_is_served_without_calling_the_provider(monkeypatch) -> None:
-    provider, repository = _gate(monkeypatch, age=timedelta(hours=3))
+def test_opening_the_board_serves_the_stored_snapshot_without_calling_the_provider(
+    monkeypatch, live
+) -> None:
+    observed_at = datetime(2026, 10, 21, 15, 0, tzinfo=timezone.utc)
+    kickoff = datetime.now(timezone.utc) + timedelta(hours=2)
+    provider = RecordingProvider()
+    repository = SavedRepository(_saved_snapshot(observed_at, kickoff))
+    monkeypatch.setattr("app.api.routes.provider", provider)
+    monkeypatch.setattr("app.api.routes.repository", repository)
 
     body = client.get("/api/v1/odds?sport=nfl").json()
 
-    assert provider.calls == 0  # survives a machine restart: gate is the database
+    assert provider.calls == 0
     assert len(body["events"]) > 0
     details = body["provider_details"]["failing"]
+    assert details["last_refreshed_at"].startswith("2026-10-21T15:00:00")
     assert details["stale"] is False
-    assert details["cache_hit"] is True
-    assert body["provider_status"]["failing"] == "configured"
-    assert repository.calls == []  # nothing new to record
+    assert repository.calls == []  # a read records nothing
 
 
-def test_saved_refresh_older_than_the_ttl_triggers_a_live_refresh(monkeypatch) -> None:
-    provider, _ = _gate(monkeypatch, age=timedelta(hours=25))
+@pytest.mark.parametrize(
+    ("started_hours_ago", "listed"), [(-2, True), (1, True), (3.9, True), (4.1, False), (48, False)]
+)
+def test_stored_games_drop_off_the_board_once_finished(
+    monkeypatch, live, started_hours_ago, listed
+) -> None:
+    start = datetime.now(timezone.utc) - timedelta(hours=started_hours_ago)
+    saved = _saved_snapshot(datetime.now(timezone.utc), start)
+    monkeypatch.setattr("app.api.routes.provider", RecordingProvider())
+    monkeypatch.setattr("app.api.routes.repository", SavedRepository(saved))
 
-    client.get("/api/v1/odds?sport=nfl")
+    body = client.get("/api/v1/odds?sport=nfl").json()
 
-    assert provider.calls == 1
+    assert bool(body["events"]) is listed
 
 
-def test_manual_force_refresh_bypasses_the_daily_gate(monkeypatch) -> None:
-    provider, _ = _gate(monkeypatch, age=timedelta(minutes=5))
+def test_fixture_mode_still_loads_its_free_sample_board_on_open(monkeypatch) -> None:
+    # Fixture games have fixed past dates and cost nothing, so no stored-read or filter here.
+    monkeypatch.setattr("app.api.routes.provider", FixtureOddsProvider())
+    monkeypatch.setattr("app.api.routes.repository", None)
+
+    body = client.get("/api/v1/odds?sport=nfl").json()
+
+    assert body["events"]
+
+
+def test_opening_the_board_without_a_database_never_calls_the_provider(
+    monkeypatch, live
+) -> None:
+    provider = RecordingProvider()
+    monkeypatch.setattr("app.api.routes.provider", provider)
+    monkeypatch.setattr("app.api.routes.repository", None)
+
+    body = client.get("/api/v1/odds?sport=nfl").json()
+
+    assert provider.calls == 0
+    assert body["events"] == []
+
+
+def test_a_refresh_is_kept_in_memory_when_persistence_is_off(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.api.routes.provider", CachedOddsProvider(FixtureOddsProvider(), ttl_seconds=60)
+    )
+    monkeypatch.setattr("app.api.routes.repository", None)
 
     client.get("/api/v1/odds?sport=nfl&force_refresh=true")
+    body = client.get("/api/v1/odds?sport=nfl").json()
+
+    assert body["events"]
+
+
+def test_force_refresh_is_honored_on_the_owners_machine(monkeypatch, live) -> None:
+    provider = RecordingProvider()
+    monkeypatch.setattr("app.api.routes.provider", provider)
+    monkeypatch.setattr("app.api.routes.repository", None)
+
+    response = client.get("/api/v1/odds?sport=nfl&force_refresh=true")
 
     assert provider.calls == 1
+    assert "X-Refresh-Ignored" not in response.headers
+
+
+@pytest.mark.parametrize("header", ["x-forwarded-for", "fly-client-ip"])
+def test_proxied_force_refresh_never_reaches_the_provider(monkeypatch, live, header) -> None:
+    provider = RecordingProvider()
+    monkeypatch.setattr("app.api.routes.provider", provider)
+    monkeypatch.setattr("app.api.routes.repository", None)
+
+    response = client.get(
+        "/api/v1/odds?sport=nfl&force_refresh=true", headers={header: "203.0.113.9"}
+    )
+
+    assert response.status_code == 403  # the private boundary stops it before /odds
+    assert provider.calls == 0
+
+
+def _can_refresh(test_client=client, headers=None) -> bool:
+    body = test_client.get("/api/v1/status", headers=headers or {}).json()
+    return body["capabilities"]["public_expensive_refresh"]
+
+
+def test_refresh_buttons_show_only_on_the_owners_machine(live) -> None:
+    assert _can_refresh() is True
+    assert _can_refresh(headers={"x-forwarded-for": "203.0.113.9"}) is False
+    assert _can_refresh(headers={"fly-client-ip": "203.0.113.9"}) is False
+    assert _can_refresh(TestClient(app, client=("203.0.113.9", 50000))) is False
+
+
+def test_refresh_buttons_hide_when_an_admin_secret_is_set(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.api.routes.settings",
+        replace(load_settings(), provider_mode=ProviderMode.LIVE, admin_refresh_secret="s3cret"),
+    )
+
+    assert _can_refresh() is False
