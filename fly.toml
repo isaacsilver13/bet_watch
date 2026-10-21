@@ -1,4 +1,4 @@
-app = "betting-aggregator-api"
+app = "bet-watch"
 primary_region = "ewr"
 
 [build]
