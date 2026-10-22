@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import error_log
 from app.api.bets import router as bets_router
+from app.api.internal import router as internal_router
 from app.api.lines import router as lines_router
 from app.api.matchup import router as matchup_router
 from app.api.ops import router as ops_router
@@ -34,6 +35,7 @@ app.include_router(matchup_router)
 app.include_router(lines_router)
 app.include_router(bets_router)
 app.include_router(ops_router)
+app.include_router(internal_router)
 
 # Serves the built frontend from the same app/port as the API, so the two no
 # longer need separate Fly apps. No-op locally, where this directory doesn't
@@ -63,7 +65,9 @@ async def private_application_boundary(request, call_next):
         "/health", "/api/v1/health", "/api/v1/health/ready",
         "/api/v1/health/metrics", "/api/v1/status",
     }
-    if not (request.method == "GET" and request.url.path in public_health):
+    # /internal/* checks its own secret (app/api/internal.py); everything else stays private.
+    internal = request.method == "POST" and request.url.path.startswith("/internal/")
+    if not internal and not (request.method == "GET" and request.url.path in public_health):
         if not may_access_private_data(request):
             return JSONResponse(status_code=403, content={
                 "detail": "Private local application. Use loopback or the owner token."

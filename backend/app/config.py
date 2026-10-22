@@ -103,6 +103,7 @@ class Settings:
     model_pick_stake: float = 25.0  # reference stake for pricing per-bet fees; never reported
     aisaac_dashboard_url: Optional[str] = None
     aisaac_internal_secret: Optional[str] = None
+    internal_jobs_secret: Optional[str] = None  # guards /internal/* (cron-job.org, nba Actions)
 
 
 def load_settings() -> Settings:
@@ -149,4 +150,5 @@ def load_settings() -> Settings:
         model_pick_stake=float(_setting("MODEL_PICK_STAKE", "25")),
         aisaac_dashboard_url=_push_setting("AISAAC_DASHBOARD_URL"),
         aisaac_internal_secret=_push_setting("AISAAC_INTERNAL_SECRET"),
+        internal_jobs_secret=_setting("INTERNAL_JOBS_SECRET", "") or None,
     )
