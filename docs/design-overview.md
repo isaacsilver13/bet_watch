@@ -1,6 +1,6 @@
 # Design overview
 
-A local-only, multi-sport matchup hub built on top of the odds board: browse a week's slate,
+A multi-sport matchup hub (local UI; jobs on a jobs-only Fly app) built on top of the odds board: browse a week's slate,
 open a matchup, and see schedule, reference lines and (later) context stats.
 
 - **Ingest:** free public sources only, normalized into Postgres (`backend/app/ingest/`).
