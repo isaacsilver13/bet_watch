@@ -1,17 +1,17 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  describeBet, fetchBets, fetchSummary, formatMoney, formatPoints, formatSigned, voidBet,
-  type Bet, type Summary, type SummaryRow,
+  describeBet, fetchBets, fetchModelPicks, fetchSummary, formatMoney, formatPoints, formatSigned, voidBet,
+  type Bet, type ModelPick, type ModelPicks, type Summary, type SummaryRow, type TrackRecord,
 } from "../lib/bets";
 import { BetsPage } from "./BetsPage";
 
 vi.mock("../lib/bets", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/bets")>();
-  return { ...actual, fetchBets: vi.fn(), fetchSummary: vi.fn(), voidBet: vi.fn() };
+  return { ...actual, fetchBets: vi.fn(), fetchModelPicks: vi.fn(), fetchSummary: vi.fn(), voidBet: vi.fn() };
 });
 
 const GAME = {
@@ -55,9 +55,30 @@ function renderPage() {
   );
 }
 
+const record = (tier: TrackRecord["tier"], overrides: Partial<TrackRecord> = {}): TrackRecord => ({
+  tier, picks: 0, graded: 0, won: 0, lost: 0, push: 0, flat_roi: null, avg_clv: null, clv_samples: 0,
+  beat_close_pct: null, ...overrides,
+});
+const NO_PICKS: ModelPicks = { record: [record("targeted"), record("watchlist")], picks: [] };
+const NBA_GAME = { ...GAME, id: 9, away: "NYK", home: "GSW", season_type: "REG", week: null };
+
+function pick(overrides: Partial<ModelPick>): ModelPick {
+  return {
+    id: 1, slate_date: "2026-01-15", game: NBA_GAME, model_version: "v1", tier: "targeted", market: "moneyline",
+    side: "home", line: null, book: "betrivers", price_american: -295, model_prob: 0.8, market_prob_novig: 0.74,
+    ev: 0.0712, kelly_frac: 0.063, close_line: null, close_price: -274, close_source: "espn", clv_points: null,
+    clv: -0.0188, result: "won", ...overrides,
+  };
+}
+
 describe("BetsPage", () => {
+  beforeEach(() => {
+    vi.mocked(fetchModelPicks).mockResolvedValue(NO_PICKS);
+  });
+
   afterEach(() => {
     cleanup();
+    vi.mocked(fetchModelPicks).mockReset();
     vi.mocked(fetchBets).mockReset();
     vi.mocked(fetchSummary).mockReset();
     vi.mocked(voidBet).mockReset();
@@ -150,6 +171,44 @@ describe("BetsPage", () => {
     renderPage();
     expect(await screen.findByText(/No bets here yet/)).toBeInTheDocument();
     expect(await screen.findByRole("alert")).toHaveTextContent("status 503");
+  });
+
+  it("shows the model picks' running CLV, results and the real-money gate", async () => {
+    vi.mocked(fetchBets).mockResolvedValue([]);
+    vi.mocked(fetchSummary).mockResolvedValue(SUMMARY);
+    vi.mocked(fetchModelPicks).mockResolvedValue({
+      record: [
+        record("targeted", { picks: 12, graded: 10, won: 6, lost: 4, flat_roi: 0.081, avg_clv: 0.0142, clv_samples: 11, beat_close_pct: 63.6 }),
+        record("watchlist", { picks: 1, graded: 1, won: 1, flat_roi: 0.952, avg_clv: -0.0238, clv_samples: 1, beat_close_pct: 0 }),
+      ],
+      picks: [
+        pick({ id: 2, tier: "watchlist", market: "spread", line: -7.5, price_american: -105, clv_points: 1, clv: -0.0238 }),
+        pick({ id: 1 }),
+      ],
+    });
+    renderPage();
+    const recordTable = await screen.findByRole("table", { name: "Model pick record" });
+    const targeted = within(recordTable).getByRole("row", { name: /Targeted/ });
+    expect(within(targeted).getByText("6-4-0")).toBeInTheDocument();
+    expect(within(targeted).getByText("+8.1%")).toHaveClass("positive");
+    expect(within(targeted).getByText("+1.4%")).toHaveClass("positive");
+    expect(screen.getByText(/Gate not met: \+1\.4% CLV over 11 of 200 targeted picks/)).toBeInTheDocument();
+    const picks = screen.getByRole("table", { name: "Model picks" });
+    const ml = within(picks).getByRole("row", { name: /GSW ML -295/ });
+    expect(within(ml).getByText("BetRivers")).toBeInTheDocument();
+    expect(within(ml).getByText("+7.1%")).toBeInTheDocument();
+    expect(within(ml).getByText("-1.9%")).toHaveClass("negative");
+    const spread = within(picks).getByRole("row", { name: /GSW -7\.5 -105/ });
+    expect(within(spread).getByText("+1 pts")).toBeInTheDocument();
+    expect(within(spread).getByText(/Watchlist/)).toBeInTheDocument();
+  });
+
+  it("says when the model has no picks yet", async () => {
+    vi.mocked(fetchBets).mockResolvedValue([]);
+    vi.mocked(fetchSummary).mockResolvedValue(SUMMARY);
+    renderPage();
+    expect(await screen.findByText("No model picks yet.")).toBeInTheDocument();
+    expect(screen.getByText(/No closes yet/)).toBeInTheDocument();
   });
 });
 

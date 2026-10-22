@@ -1,4 +1,5 @@
-"""grade_bets: settle bets on finished games and copy closing lines onto bets already kicked off.
+"""grade_bets: settle bets and model picks on finished games and copy closing lines onto those
+already kicked off.
 
 Local and free (no provider calls), so it simply runs every hour; both steps are idempotent."""
 
@@ -7,7 +8,7 @@ from datetime import datetime, timezone
 
 from app.jobs.runner import JobContext
 from app.jobs.slots import Slot, hourly_slots
-from app.storage.settlement import fill_clv, settle_final
+from app.storage.settlement import fill_clv, grade_model_picks, settle_final
 
 logger = logging.getLogger(__name__)
 
@@ -27,5 +28,9 @@ class GradeBetsJob:
         now = _now()
         settled = await settle_final(ctx.session_factory, now)
         closed = await fill_clv(ctx.session_factory, now)
-        logger.info("grade_bets: %s settled, %s closing lines filled", settled, closed)
+        picks_graded, picks_closed = await grade_model_picks(ctx.session_factory, now)
+        logger.info(
+            "grade_bets: %s settled, %s closing lines filled; model picks %s graded, %s closed",
+            settled, closed, picks_graded, picks_closed,
+        )
         return "done"

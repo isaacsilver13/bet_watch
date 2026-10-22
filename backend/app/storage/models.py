@@ -1,9 +1,10 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from sqlalchemy import (
     JSON,
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -278,3 +279,36 @@ class Bet(Base):
     clv_points: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     clv_prob: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     note: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+
+
+class ModelPick(Base):
+    """A line-free NBA model pick, priced at 10:15 CT against the morning snapshot. `line` is the
+    pick side's own number (home -7.5, away +7.5); `clv` is ratio CLV (p_close / p_pick - 1)."""
+
+    __tablename__ = "model_picks"
+    __table_args__ = (
+        UniqueConstraint("game_id", "market", "side", name="uq_model_picks_game_market_side"),
+        Index("ix_model_picks_slate_date", "slate_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), nullable=False)
+    slate_date: Mapped[date] = mapped_column(Date, nullable=False)
+    model_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    market: Mapped[str] = mapped_column(String(12), nullable=False)  # moneyline | spread
+    side: Mapped[str] = mapped_column(String(8), nullable=False)  # home | away
+    line: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    book: Mapped[str] = mapped_column(String(40), nullable=False)
+    price_american: Mapped[int] = mapped_column(Integer, nullable=False)
+    model_prob: Mapped[float] = mapped_column(Float, nullable=False)
+    market_prob_novig: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    ev: Mapped[float] = mapped_column(Float, nullable=False)  # per unit staked, after fees
+    kelly_frac: Mapped[float] = mapped_column(Float, nullable=False)  # share of bankroll
+    tier: Mapped[str] = mapped_column(String(10), nullable=False)  # targeted | watchlist
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    close_line: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    close_price: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # no-vig fair price
+    close_source: Mapped[Optional[str]] = mapped_column(String(12), nullable=True)  # odds_api|espn
+    clv_points: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    clv: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    result: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)  # won | lost | push

@@ -144,3 +144,53 @@ export function voidBet(id: number): Promise<Bet> {
     "Could not void the bet",
   );
 }
+
+/** One of the NBA model's daily picks. `targeted` = moneyline EV over 3%; `watchlist` = spread, tracking only. */
+export interface ModelPick {
+  id: number;
+  slate_date: string;
+  game: BetGame;
+  model_version: string;
+  tier: "targeted" | "watchlist";
+  market: "moneyline" | "spread";
+  side: "home" | "away";
+  line: number | null;
+  book: string;
+  price_american: number;
+  model_prob: number;
+  market_prob_novig: number | null;
+  ev: number;
+  kelly_frac: number;
+  close_line: number | null;
+  close_price: number | null;
+  close_source: string | null;
+  clv_points: number | null;
+  clv: number | null;
+  result: "won" | "lost" | "push" | null;
+}
+
+export interface TrackRecord {
+  tier: ModelPick["tier"];
+  picks: number;
+  graded: number;
+  won: number;
+  lost: number;
+  push: number;
+  flat_roi: number | null;
+  avg_clv: number | null;
+  clv_samples: number;
+  beat_close_pct: number | null;
+}
+
+export interface ModelPicks { record: TrackRecord[]; picks: ModelPick[] }
+
+/** "GSW ML -295", "GSW -7.5 -105". */
+export function describePick(pick: ModelPick): string {
+  const team = pick.side === "home" ? pick.game.home : pick.game.away;
+  const number = pick.market === "spread" ? formatLine(pick.line) : "ML";
+  return `${team} ${number} ${formatPrice(pick.price_american)}`;
+}
+
+export function fetchModelPicks(signal?: AbortSignal): Promise<ModelPicks> {
+  return send("/api/v1/model-picks", { signal }, "Could not load the model picks");
+}
