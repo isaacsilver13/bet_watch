@@ -13,6 +13,7 @@ _BY_TITLE = {
     "betmgm": "betmgm",
     "betrivers": "betrivers",
     "espn bet": "espnbet",
+    "espnbet": "espnbet",
     "thescore bet": "espnbet",
     "thescore": "espnbet",
 }

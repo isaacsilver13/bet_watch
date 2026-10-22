@@ -53,13 +53,14 @@ def _best(
     quotes: Sequence[BookQuote], field: str, prob: float, on: date, stake: float
 ) -> Optional[tuple[str, int, float]]:
     """(book, price, ev) of the book whose price is worth most to us after its fee. Offers carry
-    the feed's title ("FanDuel"); fees are keyed by venue ("fanduel")."""
+    the feed's title ("FanDuel"); fees are keyed by venue ("fanduel"). Only Illinois venues can be
+    picked: offshore books (Bovada, BetOnline...) still shape the consensus but can't be bet."""
     priced = []
     for q in quotes:
         price = getattr(q, field)
-        if price is None:
+        venue = venue_for_book(q.book)
+        if price is None or venue is None:
             continue
-        venue = venue_for_book(q.book) or q.book
         priced.append((venue, price, expected_value(prob, price, fee_for(venue, stake, on), stake)))
     return max(priced, key=lambda row: row[2]) if priced else None
 

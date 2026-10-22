@@ -120,6 +120,15 @@ def test_the_book_worth_most_after_its_fee_wins_over_the_best_raw_price() -> Non
         ("moneyline", "home", "betmgm", -110)]
 
 
+def test_offshore_books_shape_the_market_but_are_never_the_pick() -> None:
+    quotes = [quote("Bovada", ml_home=150, ml_away=-170),
+              quote("FanDuel", ml_home=-110, ml_away=-110)]
+    picks = game_picks(0, 0.6, 14, quotes, consensus(quotes), ON, 25.0, 0.3, 0.08)
+    assert [(p.side, p.book, p.price_american) for p in picks] == [("home", "fanduel", -110)]
+    offshore = [quote("Bovada", ml_home=150, ml_away=-170)]
+    assert game_picks(0, 0.6, 14, offshore, consensus(offshore), ON, 25.0, 0.3, 0.08) == []
+
+
 def test_kelly_is_the_fractional_textbook_kelly_and_is_capped() -> None:
     ev = expected_value(0.55, 120, fee=0.0, stake=25.0)
     b = 1.2
@@ -174,15 +183,16 @@ def test_the_track_record_counts_results_flat_roi_and_clv_per_tier() -> None:
 # --- the job ---------------------------------------------------------------------------------
 
 
-async def _setup(tmp_path, monkeypatch, responses=(200,), predictions=PREDICTIONS):
+async def _setup(tmp_path, monkeypatch, responses=(200,), predictions=PREDICTIONS,
+                 snapshot=SNAPSHOT):
     factory = await new_session_factory(tmp_path)
     for sport, path in SEEDS.items():
         await seed_teams(factory, sport, path)
     records = parse_scoreboard(load_json("espn_nba/scoreboard_day.json"))
     await GamesRepository(factory).upsert_games("nba", "espn", records, SEEDED)
     body = json.dumps(load_json("the_odds_api/nba_jan15.json"))
-    raw = write_raw(tmp_path / "raw", "the_odds_api", ODDS_OPEN, SNAPSHOT, body)
-    await ingest_snapshot(factory, raw, (SNAPSHOT, TIP + timedelta(hours=6)), 450, Sport.NBA)
+    raw = write_raw(tmp_path / "raw", "the_odds_api", ODDS_OPEN, snapshot, body)
+    await ingest_snapshot(factory, raw, (snapshot, TIP + timedelta(hours=6)), 450, Sport.NBA)
     preds_dir = tmp_path / "predictions"
     preds_dir.mkdir()
     if predictions is not None:
@@ -267,6 +277,19 @@ def test_no_predictions_file_means_no_picks_and_no_push(tmp_path, monkeypatch) -
     async def scenario() -> None:
         ctx, sent = await _setup(tmp_path, monkeypatch, predictions=None)
         assert await ModelPicksJob().run(ctx, None) == "empty"
+        assert await _picks(ctx) == [] and sent == []
+
+    asyncio.run(scenario())
+
+
+def test_only_todays_odds_are_priced_so_a_stale_snapshot_means_no_picks_and_no_push(
+    tmp_path, monkeypatch
+) -> None:
+    async def scenario() -> None:
+        # The open snapshot failed (dead key), so the newest stored lines are from yesterday.
+        ctx, sent = await _setup(tmp_path, monkeypatch, snapshot=SNAPSHOT - timedelta(days=1))
+        await update_slot(ctx, "odds_snapshot_nba", ODDS_OPEN, state="failed")
+        assert await run_due([ModelPicksJob()], ctx, NOW) == {SLOT: "empty"}
         assert await _picks(ctx) == [] and sent == []
 
     asyncio.run(scenario())

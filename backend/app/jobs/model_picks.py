@@ -2,7 +2,9 @@
 store the picks, and push the day's report to AIsaac.
 
 Free (no provider calls). Its 10:15 CT slot is only planned once today's `odds_snapshot_nba` open
-slot is terminal, so it never prices yesterday's lines. A manual run does not wait. The picks are
+slot is terminal, and it only prices offers observed today (Central): when that snapshot failed or
+was missed there are none, so the day is `empty` and nothing is pushed. A manual run does not
+wait. The picks are
 stored once per slate; a failed push leaves the slot pending, so the next tick retries the push
 only. Reads `$NBA_PREDICTIONS_DIR/<date>.json`; no file means no picks today."""
 
@@ -145,11 +147,18 @@ class ModelPicksJob:
             logger.info("model_picks: no predictions for %s", day)
             return "empty"
         report = await self._store_and_report(ctx, settings, preds, now)
+        if report["odds_as_of"] is None:
+            logger.warning("model_picks: no odds observed today for %s; nothing priced", day)
+            return "empty"
         return "done" if await push_report(ctx.http, settings, report) else "pending"
 
     async def _store_and_report(
         self, ctx: JobContext, settings: Settings, preds: Predictions, now: datetime
     ) -> dict:
+        # UTC bound, as in _games. Older offers are another day's market (a dead API key once had
+        # games priced on six-week-old lines).
+        today = datetime.combine(now.astimezone(CENTRAL).date(), time(0), CENTRAL).astimezone(
+            timezone.utc)
         async with ctx.session_factory() as session, session.begin():
             games = await _games(session, preds)
             stored = (await session.scalars(
@@ -173,7 +182,7 @@ class ModelPicksJob:
                 summary.update(game_id=game.id, tip=tip.isoformat())
                 if game.status != "scheduled" or tip <= now:
                     continue  # the feed also carries in-game prices
-                offers = await side_offers(session, game, until=now)
+                offers = await side_offers(session, game, since=today, until=now)
                 if not offers:
                     continue
                 newest = max(o.observed_at for o in offers)
