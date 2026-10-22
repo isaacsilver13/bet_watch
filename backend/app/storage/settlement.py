@@ -1,4 +1,5 @@
-"""Settle bets on finished games and copy the closing line onto bets that have kicked off."""
+"""Settle bets and model picks on finished games, and copy the closing line onto those that
+have kicked off."""
 
 from collections import defaultdict
 from datetime import datetime
@@ -10,10 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.analytics.clv import clv, pick_close
 from app.analytics.grading import grade, payout
 from app.analytics.market import BookQuote, SideOffer, book_quotes, consensus
+from app.analytics.pricing import implied_prob
 from app.storage.bets_repository import OPEN
 from app.storage.games_repository import aware
 from app.storage.lines_repository import side_offers
-from app.storage.models import Bet, Game, GameLine
+from app.storage.models import Bet, Game, GameLine, ModelPick
 
 
 async def settle_final(session_factory: async_sessionmaker[AsyncSession], now: datetime) -> int:
@@ -58,10 +60,7 @@ async def fill_clv(session_factory: async_sessionmaker[AsyncSession], now: datet
             by_game[game.id].append(bet)
             games[game.id] = game
         for game_id, bets in by_game.items():
-            game = games[game_id]
-            kickoff = aware(game.start_time)
-            snapshot = _last_snapshot(await side_offers(session, game, until=kickoff))
-            espn = await _espn_close(session, game_id)
+            snapshot, kickoff, espn = await _close_inputs(session, games[game_id])
             for bet in bets:
                 close = pick_close(snapshot, kickoff, espn, bet.market, bet.selection)
                 if close is None:
@@ -74,6 +73,54 @@ async def fill_clv(session_factory: async_sessionmaker[AsyncSession], now: datet
                 bet.clv_prob = result.prob
                 filled += 1
     return filled
+
+
+async def grade_model_picks(
+    session_factory: async_sessionmaker[AsyncSession], now: datetime
+) -> tuple[int, int]:
+    """(results filled, closes filled) for model picks. Same close rule as bets."""
+    graded = closed = 0
+    async with session_factory() as session, session.begin():
+        rows = (
+            await session.execute(
+                select(ModelPick, Game)
+                .join(Game, ModelPick.game_id == Game.id)
+                .where(
+                    (ModelPick.result.is_(None) & (Game.status == "final"))
+                    | (ModelPick.close_source.is_(None) & (Game.start_time <= now))
+                )
+            )
+        ).all()
+        inputs: dict[int, tuple] = {}
+        for pick, game in rows:
+            if pick.result is None and game.home_score is not None and game.away_score is not None:
+                pick.result = grade(pick.market, pick.side, pick.line, game.home_score,
+                                    game.away_score)
+                graded += 1
+            if pick.close_source is not None or aware(game.start_time) > now:
+                continue
+            if game.id not in inputs:
+                inputs[game.id] = await _close_inputs(session, game)
+            close = pick_close(*inputs[game.id], pick.market, pick.side)
+            if close is None:
+                continue  # no close yet; the next run tries again
+            result = clv(pick.market, pick.side, pick.line, pick.price_american, close)
+            pick.close_line = result.close_line
+            pick.close_price = result.close_price
+            pick.close_source = result.source
+            pick.clv_points = result.points
+            # Ratio CLV, p_close / p_pick - 1 (clv.ratio_clv without rounding the close price).
+            pick.clv = None if result.prob is None else result.prob / implied_prob(
+                pick.price_american)
+            closed += 1
+    return graded, closed
+
+
+async def _close_inputs(session: AsyncSession, game: Game):
+    """(newest pre-kick snapshot, kickoff, ESPN close): what `pick_close` chooses between."""
+    kickoff = aware(game.start_time)
+    snapshot = _last_snapshot(await side_offers(session, game, until=kickoff))
+    return snapshot, kickoff, await _espn_close(session, game.id)
 
 
 def _last_snapshot(offers: list[SideOffer]):

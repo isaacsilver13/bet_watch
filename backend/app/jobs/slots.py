@@ -31,11 +31,15 @@ def hourly_slots(
 
 
 def daily_slot(
-    job: str, now: datetime, start_hour: int = 8, weekday: Optional[int] = None
+    job: str,
+    now: datetime,
+    start_hour: int = 8,
+    weekday: Optional[int] = None,
+    start_minute: int = 0,
 ) -> list[Slot]:
     day = now.astimezone(CENTRAL).date()
     if weekday is not None and day.weekday() != weekday:
         return []
-    start = datetime.combine(day, time(start_hour), CENTRAL)
+    start = datetime.combine(day, time(start_hour, start_minute), CENTRAL)
     end = datetime.combine(day + timedelta(days=1), time(0), CENTRAL)
     return [Slot(f"{job}:{day.isoformat()}", start, end)] if now >= start else []

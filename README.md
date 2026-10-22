@@ -101,6 +101,18 @@ Games that tip between those two get ESPN's close for CLV instead of a multi-boo
 October through February, with the NFL's roughly 30 credits a week, the two sports use about 400 of
 the free 500 credits a month; `PROVIDER_MIN_QUOTA_REMAINING` still stops everything at the floor.
 
+**Model picks.** `model_picks` (free) prices the nba repo's line-free predictions,
+`$NBA_PREDICTIONS_DIR/<date>.json` (default `../nba_prediction/outputs/predictions`), against every
+book once today's 10am NBA snapshot has finished (from 10:15 CT). EV is per unit after Illinois
+per-bet fees at a `MODEL_PICK_STAKE` reference stake (default $25), Kelly is
+`FRACTIONAL_KELLY` (0.30) capped at `MAX_KELLY` (0.08). Moneylines over 3% EV are *targeted*;
+spreads (cover probability Φ((margin + line) / sigma)) are a *watchlist*, unproven and tracked
+only. The picks are stored once, then the day's report is posted to
+`<AISAAC_DASHBOARD_URL>/internal/nba-report` with `X-Internal-Secret` (env, else
+`~/.claude/aisaac_push.json`); a failed push is retried on the next tick. `grade_bets` grades them
+and copies the close like bets, and the Bets page shows each tier's record and CLV.
+`python -m app.jobs model_picks` runs it now without waiting for the snapshot.
+
 ## Run locally
 
 ### Backend

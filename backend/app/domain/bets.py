@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
@@ -112,3 +112,44 @@ class SummaryResponse(BaseModel):
     group_by: str
     total: SummaryRowView
     groups: list[SummaryRowView]
+
+
+class ModelPickView(BaseModel):
+    id: int
+    slate_date: date
+    game: BetGameView
+    model_version: str
+    tier: str  # targeted | watchlist
+    market: str
+    side: str
+    line: Optional[float]
+    book: str
+    price_american: int
+    model_prob: float
+    market_prob_novig: Optional[float]
+    ev: float
+    kelly_frac: float
+    close_line: Optional[float]
+    close_price: Optional[int]
+    close_source: Optional[str]
+    clv_points: Optional[float]
+    clv: Optional[float]  # p_close / p_pick - 1
+    result: Optional[str]
+
+
+class TrackRecordView(BaseModel):
+    tier: str
+    picks: int
+    graded: int
+    won: int
+    lost: int
+    push: int
+    flat_roi: Optional[float]
+    avg_clv: Optional[float]
+    clv_samples: int
+    beat_close_pct: Optional[float]
+
+
+class ModelPicksResponse(BaseModel):
+    record: list[TrackRecordView]
+    picks: list[ModelPickView]  # newest first

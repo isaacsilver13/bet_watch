@@ -1,3 +1,4 @@
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ from dotenv import dotenv_values
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DOTENV_PATH = _REPO_ROOT / ".env"
+# The AIsaac push target, shared with the owner's other local push scripts; env/.env win.
+_PUSH_CONFIG_PATH = Path.home() / ".claude" / "aisaac_push.json"
 _DEFAULT_DATABASE_URL = (
     "postgresql+asyncpg://betting_aggregator:betting_aggregator@127.0.0.1:5433/"
     "betting_aggregator"
@@ -23,6 +26,13 @@ def _setting(name: str, default: str) -> str:
 
     file_value = dotenv_values(_DOTENV_PATH).get(name)
     return file_value if file_value is not None else default
+
+
+def _push_setting(name: str) -> Optional[str]:
+    value = _setting(name, "").strip()
+    if not value and _PUSH_CONFIG_PATH.exists():
+        value = str(json.loads(_PUSH_CONFIG_PATH.read_text(encoding="utf-8")).get(name) or "")
+    return value.strip() or None
 
 
 _VALID_REGIONS = {"us", "us2", "uk", "eu", "au"}
@@ -87,6 +97,12 @@ class Settings:
     admin_refresh_budget: int = 4
     admin_refresh_budget_window_seconds: int = 86400
     raw_data_dir: str = "data/raw"
+    nba_predictions_dir: str = "predictions"
+    fractional_kelly: float = 0.30  # mirrors the nba repo's experiment.py
+    max_kelly: float = 0.08
+    model_pick_stake: float = 25.0  # reference stake for pricing per-bet fees; never reported
+    aisaac_dashboard_url: Optional[str] = None
+    aisaac_internal_secret: Optional[str] = None
 
 
 def load_settings() -> Settings:
@@ -126,4 +142,11 @@ def load_settings() -> Settings:
             _setting("ADMIN_REFRESH_BUDGET_WINDOW_SECONDS", "86400")
         ),
         raw_data_dir=_setting("RAW_DATA_DIR", "").strip() or str(_REPO_ROOT / "data" / "raw"),
+        nba_predictions_dir=_setting("NBA_PREDICTIONS_DIR", "").strip()
+        or str(_REPO_ROOT.parent / "nba_prediction" / "outputs" / "predictions"),
+        fractional_kelly=float(_setting("FRACTIONAL_KELLY", "0.30")),
+        max_kelly=float(_setting("MAX_KELLY", "0.08")),
+        model_pick_stake=float(_setting("MODEL_PICK_STAKE", "25")),
+        aisaac_dashboard_url=_push_setting("AISAAC_DASHBOARD_URL"),
+        aisaac_internal_secret=_push_setting("AISAAC_INTERNAL_SECRET"),
     )

@@ -5,19 +5,25 @@ from datetime import datetime
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
 
 from app.analytics.bet_stats import summarize
 from app.analytics.clv import ratio_clv
 from app.analytics.grading import profit
+from app.analytics.picks import PickFacts, track_record
 from app.api.slate import get_now, get_session_factory
 from app.domain.bets import (
     BetGameView,
     BetIn,
     BetPatch,
     BetView,
+    ModelPicksResponse,
+    ModelPickView,
     SummaryResponse,
     SummaryRowView,
+    TrackRecordView,
 )
 from app.storage.bets_repository import (
     OPEN,
@@ -28,10 +34,24 @@ from app.storage.bets_repository import (
     GameNotFound,
 )
 from app.storage.games_repository import aware
-from app.storage.models import Bet, Game
+from app.storage.models import Bet, Game, ModelPick, Team
 
 router = APIRouter(prefix="/api/v1")
 Group = Literal["venue", "sport", "market"]
+
+
+def _game_view(game: Game, home: str, away: str) -> BetGameView:
+    return BetGameView(
+        id=game.id,
+        away=away,
+        home=home,
+        season_type=game.season_type,
+        week=game.week,
+        start_time=aware(game.start_time),
+        status=game.status,
+        away_score=game.away_score,
+        home_score=game.home_score,
+    )
 
 
 def _view(row: BetRow) -> BetView:
@@ -39,17 +59,7 @@ def _view(row: BetRow) -> BetView:
     graded = bet.status != OPEN and bet.payout is not None
     return BetView(
         id=bet.id,
-        game=BetGameView(
-            id=game.id,
-            away=row.away,
-            home=row.home,
-            season_type=game.season_type,
-            week=game.week,
-            start_time=aware(game.start_time),
-            status=game.status,
-            away_score=game.away_score,
-            home_score=game.home_score,
-        ),
+        game=_game_view(game, row.home, row.away),
         placed_at=aware(bet.placed_at),
         venue=bet.venue,
         market=bet.market,
@@ -139,3 +149,31 @@ async def patch_bet(
     except ValueError as error:
         raise HTTPException(422, detail=str(error)) from error
     return _view(await repo.get(bet_id))
+
+
+@router.get("/model-picks", response_model=ModelPicksResponse)
+async def model_picks(
+    limit: int = Query(100, ge=1, le=1000),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> ModelPicksResponse:
+    """The NBA model's picks: each tier's running record over every pick, and the newest picks."""
+    home, away = aliased(Team), aliased(Team)
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(ModelPick, Game, home.abbr, away.abbr)
+                .join(Game, ModelPick.game_id == Game.id)
+                .join(home, Game.home_team_id == home.id)
+                .join(away, Game.away_team_id == away.id)
+                .order_by(ModelPick.slate_date.desc(), ModelPick.id.desc())
+            )
+        ).all()
+    record = track_record([PickFacts(p.tier, p.price_american, p.result, p.clv) for p, *_ in rows])
+    picks = [
+        ModelPickView(
+            game=_game_view(game, home_abbr, away_abbr),
+            **{name: getattr(pick, name) for name in ModelPickView.model_fields if name != "game"},
+        )
+        for pick, game, home_abbr, away_abbr in rows[:limit]
+    ]
+    return ModelPicksResponse(record=[TrackRecordView(**asdict(r)) for r in record], picks=picks)
