@@ -50,4 +50,4 @@ NBA_PREDICTIONS_DIR = "/data/predictions"
 # The free-tier Illinois books (.env.example); unset would price the whole `us` region.
 ODDS_BOOKMAKERS = "draftkings,fanduel,betmgm,betrivers,espnbet"
 # model_picks pushes the NBA report here. Update with the AIsaac Fly rename (aisaac-dashboard -> aisaac).
-AISAAC_DASHBOARD_URL = "https://aisaac-dashboard.fly.dev"
+AISAAC_DASHBOARD_URL = "https://aisaac.fly.dev"
