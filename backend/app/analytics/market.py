@@ -3,7 +3,7 @@
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from statistics import mean, median
 from typing import Optional
 
@@ -20,6 +20,8 @@ class SideOffer:
     line: Optional[float]
     price: int
     observed_at: datetime
+    provider_updated_at: Optional[datetime] = None
+    observation_id: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -89,6 +91,54 @@ def book_quotes(offers: Iterable[SideOffer]) -> list[BookQuote]:
             )
         )
     return quotes
+
+
+def fresh_paired_main_offers(
+    offers: Iterable[SideOffer], as_of: datetime,
+    max_age: timedelta = timedelta(hours=1),
+) -> list[SideOffer]:
+    """Newest complete two-sided main markets from one capture and provider update.
+
+    A newer incomplete capture never falls back to an older one. A book can
+    supply an ML and spread pair with different market update times, but the
+    two outcomes within either pair must be synchronized. Unknown provider
+    update times are ineligible for a priced model decision.
+    """
+    if max_age < timedelta(0):
+        raise ValueError("max_age must be nonnegative")
+    found = [o for o in offers if o.market in {"moneyline", "spread"}
+             and o.observed_at <= as_of]
+    if not found:
+        return []
+    latest_capture = max(o.observed_at for o in found)
+    if as_of - latest_capture > max_age:
+        return []
+    grouped: dict[
+        tuple[str, str, datetime, Optional[float]], dict[str, SideOffer]
+    ] = defaultdict(dict)
+    for offer in found:
+        if (offer.observed_at != latest_capture or offer.provider_updated_at is None
+                or offer.provider_updated_at > as_of
+                or as_of - offer.provider_updated_at > max_age):
+            continue
+        if offer.market == "moneyline":
+            if offer.line is not None:
+                continue
+            line = None
+        else:
+            if offer.line is None:
+                continue
+            line = offer.line if offer.side == "home" else -offer.line
+        if offer.side in {"home", "away"}:
+            grouped[(offer.book, offer.market, offer.provider_updated_at, line)][offer.side] = offer
+    newest: dict[tuple[str, str], tuple[SideOffer, SideOffer]] = {}
+    for (book, market, updated_at, _), sides in grouped.items():
+        if "home" not in sides or "away" not in sides:
+            continue
+        key = (book, market)
+        if key not in newest or updated_at > newest[key][0].provider_updated_at:
+            newest[key] = (sides["home"], sides["away"])
+    return [offer for key in sorted(newest) for offer in newest[key]]
 
 
 def _modal(values: Sequence[float]) -> Optional[float]:

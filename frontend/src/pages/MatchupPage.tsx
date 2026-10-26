@@ -305,7 +305,9 @@ export function MatchupPage() {
       </section>
 
       {tab === "lines" && game.data && (
-        <section role="tabpanel"><LinesPanel game={game.data} /></section>
+        <section role="tabpanel"><LinesPanel context={context.data ?? null}
+          contextError={context.error instanceof Error ? context.error : null}
+          contextLoading={context.isLoading} game={game.data} /></section>
       )}
       {onContextTab && context.isLoading && (
         <div className="skeleton-card" aria-label="Loading context"><span /><span /><span /></div>

@@ -28,7 +28,7 @@ export function NbaSlatePage() {
           <h1>{data ? dayTitle(data.date) : "Slate"}</h1>
         </div>
         <nav className="app-nav" aria-label="Sections">
-          <Link to="/nfl">NFL</Link> · <Link to="/bets">Bets</Link> · <Link to="/odds">Odds board</Link>
+          <Link to="/nfl">NFL</Link> · <Link to="/bets">Bets</Link> · <Link to="/odds">Odds board</Link> · <Link to={`/nba/report/${data?.date ?? date ?? ""}`}>Daily report</Link>
         </nav>
       </header>
 

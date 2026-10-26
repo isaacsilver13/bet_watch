@@ -73,7 +73,7 @@ def _body() -> str:
     return json.dumps(load_json("the_odds_api/nba_jan15.json"))
 
 
-async def _setup(tmp_path, monkeypatch, now=NOW):
+async def _setup(tmp_path, monkeypatch, now=NOW, quota=450):
     factory = await new_session_factory(tmp_path)
     for sport, path in SEEDS.items():
         await seed_teams(factory, sport, path)
@@ -85,6 +85,8 @@ async def _setup(tmp_path, monkeypatch, now=NOW):
     calls: list = []
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v4/sports/":
+            return httpx.Response(200, json=[], headers={"x-requests-remaining": str(quota)})
         calls.append(request.url)
         return httpx.Response(200, text=_body(), headers={"x-requests-remaining": "450"})
 
@@ -122,7 +124,9 @@ def test_the_nba_morning_snapshot_is_stored_and_linked_to_the_nba_game(
 
 def test_the_two_sports_draw_on_one_credit_pool(tmp_path, monkeypatch) -> None:
     async def scenario() -> None:
-        ctx, calls = await _setup(tmp_path, monkeypatch)
+        ctx, calls = await _setup(
+            tmp_path, monkeypatch, quota=load_settings().provider_min_quota_remaining
+        )
         async with ctx.session_factory() as session, session.begin():
             session.add(ProviderRefreshRun(
                 provider="the_odds_api", sport="nfl", status="succeeded", started_at=SEEDED,

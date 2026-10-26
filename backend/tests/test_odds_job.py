@@ -12,6 +12,7 @@ from app.jobs import odds as odds_job
 from app.jobs.odds import OddsSnapshotJob, daily_odds_slots, pre_kick_slots
 from app.jobs.runner import JobContext, get_slot_info, run_due, run_once, update_slot
 from app.jobs.slots import CENTRAL
+from app.providers.errors import ProviderPayloadError
 from app.providers.the_odds_api.client import TheOddsApiClient
 from app.storage.games_repository import GamesRepository
 from app.storage.models import Game, JobSlot, OfferObservation, ProviderRefreshRun
@@ -37,7 +38,8 @@ class Setup:
         self.calls = calls
 
 
-async def _setup(tmp_path, monkeypatch, body=None, games=True, live=True, now=NOW) -> Setup:
+async def _setup(tmp_path, monkeypatch, body=None, games=True, live=True, now=NOW,
+                 quota=450) -> Setup:
     factory = await new_session_factory(tmp_path)
     await seed_teams(factory)
     if games:
@@ -46,6 +48,8 @@ async def _setup(tmp_path, monkeypatch, body=None, games=True, live=True, now=NO
     calls: list = []
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v4/sports/":
+            return httpx.Response(200, json=[], headers={"x-requests-remaining": str(quota)})
         calls.append(request.url)
         return httpx.Response(
             200, text=body or _body(), headers={"x-requests-remaining": "450"}
@@ -195,12 +199,57 @@ def test_a_thin_snapshot_is_partial_then_retried_after_the_gap_then_gives_up(
 
 def test_the_quota_floor_skips_the_slot_without_a_call(tmp_path, monkeypatch) -> None:
     async def scenario() -> None:
-        s = await _setup(tmp_path, monkeypatch)
+        s = await _setup(tmp_path, monkeypatch,
+                         quota=load_settings().provider_min_quota_remaining)
         async with s.ctx.session_factory() as session, session.begin():
             session.add(ProviderRefreshRun(
                 provider="the_odds_api", sport="nfl", status="succeeded", started_at=SEEDED,
                 completed_at=SEEDED, quota_remaining=load_settings().provider_min_quota_remaining,
             ))
+        assert await run_due([OddsSnapshotJob()], s.ctx, NOW) == {SLOT: "skipped_quota"}
+        assert s.calls == []
+
+    asyncio.run(scenario())
+
+
+def test_current_exhausted_quota_overrides_stale_stored_balance(tmp_path, monkeypatch) -> None:
+    async def scenario() -> None:
+        s = await _setup(tmp_path, monkeypatch, quota=-4)
+        async with s.ctx.session_factory() as session, session.begin():
+            session.add(ProviderRefreshRun(
+                provider="the_odds_api", sport="nba", status="succeeded", started_at=SEEDED,
+                completed_at=SEEDED, quota_remaining=498,
+            ))
+        assert await run_due([OddsSnapshotJob()], s.ctx, NOW) == {SLOT: "skipped_quota"}
+        assert s.calls == []
+
+    asyncio.run(scenario())
+
+
+def test_quota_preflight_failure_waits_without_a_paid_call(tmp_path, monkeypatch) -> None:
+    async def scenario() -> None:
+        s = await _setup(tmp_path, monkeypatch)
+
+        async def unavailable() -> int:
+            raise ProviderPayloadError("missing quota header")
+
+        monkeypatch.setattr(s.ctx.odds, "fetch_quota_remaining", unavailable)
+        assert await run_due([OddsSnapshotJob()], s.ctx, NOW) == {SLOT: "waiting"}
+        assert s.calls == []
+        assert (await get_slot_info(s.ctx, "odds_snapshot", SLOT)).attempts == 0
+
+    asyncio.run(scenario())
+
+
+def test_quota_drop_between_checks_skips_without_a_paid_call(tmp_path, monkeypatch) -> None:
+    async def scenario() -> None:
+        s = await _setup(tmp_path, monkeypatch)
+        readings = iter((450, -4))
+
+        async def current_quota() -> int:
+            return next(readings)
+
+        monkeypatch.setattr(s.ctx.odds, "fetch_quota_remaining", current_quota)
         assert await run_due([OddsSnapshotJob()], s.ctx, NOW) == {SLOT: "skipped_quota"}
         assert s.calls == []
 

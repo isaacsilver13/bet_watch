@@ -4,9 +4,11 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import httpx
+import pytest
 from app.config import ProviderMode, load_settings
 from app.domain.models import Sport
 from app.ingest.odds_raw import observed_at_from_path, read_raw, write_raw
+from app.providers.errors import ProviderPayloadError, ProviderQuotaError
 from app.providers.the_odds_api.adapter import TheOddsApiProvider
 from app.providers.the_odds_api.client import TheOddsApiClient
 from app.storage.games_repository import aware
@@ -31,9 +33,44 @@ def test_fetch_odds_raw_returns_the_exact_body_and_reads_the_quota() -> None:
     text = asyncio.run(client.fetch_odds_raw(Sport.NFL))
     assert text == BODY
     assert client.quota_remaining == 471
-    assert len(seen) == 1
-    assert seen[0].params["markets"] == "h2h,spreads,totals"
-    assert seen[0].params["bookmakers"] == "draftkings,fanduel"
+    assert len(seen) == 2 and seen[0].path == "/v4/sports/"
+    assert seen[1].params["markets"] == "h2h,spreads,totals"
+    assert seen[1].params["bookmakers"] == "draftkings,fanduel"
+
+
+@pytest.mark.parametrize("header", [None, "unknown"])
+def test_quota_preflight_fails_closed_without_a_numeric_header(header) -> None:
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url)
+        headers = {"x-requests-remaining": header} if header is not None else {}
+        return httpx.Response(200, json=[], headers=headers)
+
+    client = TheOddsApiClient("key", transport=httpx.MockTransport(handler))
+    with pytest.raises(ProviderPayloadError, match="remaining-credits"):
+        asyncio.run(client.fetch_quota_remaining())
+    assert len(seen) == 1 and seen[0].path == "/v4/sports/"
+    assert "markets" not in seen[0].params
+
+
+@pytest.mark.parametrize("method", ["bulk", "raw", "props"])
+def test_every_paid_odds_method_stops_at_exhausted_quota(method) -> None:
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        return httpx.Response(200, json=[], headers={"x-requests-remaining": "-4"})
+
+    client = TheOddsApiClient("key", transport=httpx.MockTransport(handler))
+    call = {
+        "bulk": lambda: client.fetch_odds(Sport.NBA),
+        "raw": lambda: client.fetch_odds_raw(Sport.NBA),
+        "props": lambda: client.fetch_event_player_props(Sport.NBA, "event-1"),
+    }[method]
+    with pytest.raises(ProviderQuotaError):
+        asyncio.run(call())
+    assert seen == ["/v4/sports/"]
 
 
 def test_events_are_stamped_with_the_snapshot_time_not_the_parse_time() -> None:

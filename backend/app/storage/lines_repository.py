@@ -54,6 +54,9 @@ async def side_offers(
                 line=row.line,
                 price=row.price_american,
                 observed_at=aware(row.observed_at),
+                provider_updated_at=(aware(row.provider_updated_at)
+                                     if row.provider_updated_at is not None else None),
+                observation_id=row.id,
             )
         )
     return offers

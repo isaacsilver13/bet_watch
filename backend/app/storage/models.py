@@ -312,3 +312,112 @@ class ModelPick(Base):
     clv_points: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     clv: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     result: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)  # won | lost | push
+
+
+class NbaForecast(Base):
+    """Immutable daily prediction artifact delivered by the NBA model producer."""
+
+    __tablename__ = "nba_forecasts"
+
+    slate_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    model_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    data_through: Mapped[date] = mapped_column(Date, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+
+class NbaReport(Base):
+    """Immutable daily report payload; retries send the original decision snapshot."""
+
+    __tablename__ = "nba_reports"
+
+    slate_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+
+class NbaDigestDelivery(Base):
+    """Frozen owner email and one-shot send state for a saved NBA report."""
+
+    __tablename__ = "nba_digest_deliveries"
+
+    slate_date: Mapped[date] = mapped_column(
+        Date, ForeignKey("nba_reports.slate_date"), primary_key=True
+    )
+    prepared_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    request_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(20), nullable=False)  # staged|sending|accepted|review
+    attempted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    provider_message_id: Mapped[Optional[str]] = mapped_column(String(160))
+    failure_type: Mapped[Optional[str]] = mapped_column(String(80))
+
+
+class OwnerSession(Base):
+    """Revocable single-owner browser session; only a hash of the cookie is stored."""
+
+    __tablename__ = "owner_sessions"
+
+    token_sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    credential_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PaperAllocationBatch(Base):
+    """One frozen, independent paper decision for a variant and NBA slate."""
+
+    __tablename__ = "paper_allocation_batches"
+    __table_args__ = (UniqueConstraint("profile", "slate_date", name="uq_paper_profile_slate"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile: Mapped[str] = mapped_column(String(20), nullable=False)
+    slate_date: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    report_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    forecast_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    opening_cash: Mapped[float] = mapped_column(Float, nullable=False)
+    allocation: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+
+class PaperWager(Base):
+    """Frozen paper stake and quote identity; results live in separate settlement rows."""
+
+    __tablename__ = "paper_wagers"
+    __table_args__ = (
+        UniqueConstraint("batch_id", "candidate_id", name="uq_paper_batch_candidate"),
+        Index("ix_paper_wagers_game", "game_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("paper_allocation_batches.id"), nullable=False)
+    candidate_id: Mapped[str] = mapped_column(String(220), nullable=False)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), nullable=False)
+    quote_observation_id: Mapped[int] = mapped_column(
+        ForeignKey("offer_observations.id"), nullable=False
+    )
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    book: Mapped[str] = mapped_column(String(20), nullable=False)
+    price_american: Mapped[int] = mapped_column(Integer, nullable=False)
+    win_prob: Mapped[float] = mapped_column(Float, nullable=False)
+    stake: Mapped[float] = mapped_column(Float, nullable=False)
+    fee: Mapped[float] = mapped_column(Float, nullable=False)
+    net_ev: Mapped[float] = mapped_column(Float, nullable=False)
+
+
+class PaperSettlement(Base):
+    """One immutable grading credit per paper wager."""
+
+    __tablename__ = "paper_settlements"
+
+    wager_id: Mapped[int] = mapped_column(ForeignKey("paper_wagers.id"), primary_key=True)
+    result: Mapped[str] = mapped_column(String(12), nullable=False)
+    payout: Mapped[float] = mapped_column(Float, nullable=False)
+    settled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    home_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    away_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    game_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

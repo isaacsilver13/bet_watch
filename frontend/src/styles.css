@@ -248,11 +248,18 @@ footer { gap: 20px; padding-top: 20px; }
 select { min-height: 39px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--surface-solid); padding: 8px 11px; }
 
 .lines-table td { min-width: 150px; }
+.lines-table td small { display: block; color: var(--muted); font-size: 0.72rem; }
 .price-button { display: block; width: 100%; margin: 2px 0; border: 1px solid var(--line); border-radius: 8px; color: var(--secondary); background: rgba(255,255,255,0.035); padding: 5px 9px; font-family: "DM Mono", monospace; font-size: 0.82rem; text-align: left; }
 .price-button:hover { border-color: var(--secondary); color: var(--ink); background: rgba(165, 180, 252, 0.16); }
 .lines-consensus { margin: 14px 0 6px; font-family: "DM Mono", monospace; font-size: 0.85rem; }
-.best-prices { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; padding: 0; list-style: none; }
-.best-prices li { border: 1px solid rgba(167, 243, 208, 0.4); border-radius: 999px; color: var(--accent); padding: 4px 10px; font-family: "DM Mono", monospace; font-size: 0.75rem; }
+.price-comparison-note { margin: 0 0 12px; color: var(--muted); font-size: 0.78rem; }
+.missing-price { color: var(--muted); font-size: 0.8rem; }
+.market-context { margin: 20px 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: rgba(9, 15, 31, 0.45); }
+.market-context-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.market-context-heading h3 { margin: 0; }
+.market-context [aria-pressed="true"] { border-color: var(--secondary); color: var(--ink); }
+.market-context table { margin: 10px 0; }
+.market-metrics p, .market-availability { margin: 8px 0; font-size: 0.82rem; }
 .chart-row { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin: 18px 0; }
 .line-chart { margin: 0; color: var(--secondary); }
 .line-chart svg { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; background: rgba(9, 15, 31, 0.5); }
@@ -271,3 +278,28 @@ select { min-height: 39px; border: 1px solid var(--line); border-radius: 8px; co
 .stat small { display: block; margin-top: 3px; color: var(--muted); font-size: 0.72rem; }
 .positive { color: var(--accent); }
 .negative { color: var(--danger); }
+
+.owner-bar { display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding: 5px 24px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 0.75rem; }
+.owner-bar button { border: 0; background: transparent; color: var(--secondary); cursor: pointer; font: inherit; }
+.owner-login { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.owner-login form { display: grid; gap: 14px; width: min(100%, 380px); padding: 28px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-solid); }
+.owner-login h1, .owner-login p { margin: 0; }
+.owner-login label { font-weight: 600; }
+.owner-login input { width: 100%; min-height: 42px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 11px; color: var(--ink); background: rgba(9, 15, 31, 0.5); }
+.report-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 8px 0 28px; color: var(--muted); font-size: 0.78rem; }
+.report-games { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.report-game { padding: 17px; border: 1px solid var(--line); border-radius: 12px; background: rgba(9, 15, 31, 0.5); }
+.report-game h3 { margin: 0 0 8px; }
+.report-game p { margin: 6px 0 12px; }
+.report-prob-row { display: flex; justify-content: space-between; gap: 8px; margin: 12px 0 4px; font-size: 0.82rem; }
+.report-prob-track { height: 10px; overflow: hidden; border-radius: 6px; background: rgba(255, 255, 255, 0.1); }
+.report-prob-track span { display: block; height: 100%; border-radius: 6px; background: var(--secondary); }
+.report-prob-track.market span { background: var(--accent); }
+.report-game .report-detail, .report-caveat { color: var(--muted); font-size: 0.77rem; }
+.report-caveat { margin: 12px 0 28px; }
+.report-toggle, .report-controls label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.82rem; }
+.report-controls { display: flex; flex-wrap: wrap; gap: 12px 22px; margin: 12px 0; }
+.report-table-scroll { overflow-x: auto; }
+.report-table { width: 100%; border-collapse: collapse; white-space: nowrap; }
+.report-table th, .report-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; font-size: 0.82rem; }
+.report-table th { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }

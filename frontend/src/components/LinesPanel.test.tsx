@@ -25,6 +25,7 @@ vi.mock("../lib/api", async (importOriginal) => {
 
 const GAME = {
   id: 7, home: { id: 10, abbr: "DEN", name: "Denver Broncos" }, away: { id: 26, abbr: "SEA", name: "Seattle Seahawks" },
+  sport: "nfl",
 } as SlateGame;
 
 function book(name: string, venue: string | null, spreadHome: number, home: number, away: number): BookLine {
@@ -78,23 +79,81 @@ describe("LinesPanel", () => {
     vi.mocked(fetchPredictionMarkets).mockReset();
   });
 
-  it("shows every book, the consensus, the best prices and the line movement", async () => {
+  it("shows best prices without an all-books grid, plus consensus and line movement", async () => {
     vi.mocked(fetchLines).mockResolvedValue(lines());
     vi.mocked(fetchPredictionMarkets).mockResolvedValue({
       generated_at: "", provider_status: {}, provider_details: {}, contract_counts: {}, contracts: [],
     });
     renderPanel();
-    expect(await screen.findByText("DraftKings")).toBeInTheDocument();
-    expect(screen.getByText("BetRivers")).toBeInTheDocument();
+    const comparison = await screen.findByRole("table", { name: "Best and FanDuel prices" });
+    expect(within(comparison).getByRole("columnheader", { name: "Best tracked book" })).toBeInTheDocument();
+    expect(within(comparison).queryByRole("columnheader", { name: "Book" })).not.toBeInTheDocument();
     expect(screen.getByText(/Consensus of 2 books: DEN \+1\.5 · O\/U 42\.5 · DEN win 46\.9%/)).toBeInTheDocument();
-    const best = within(screen.getByRole("list", { name: "Best prices" }));
-    expect(best.getByText("DEN +1.5 -105 (BetRivers)")).toBeInTheDocument();
-    expect(best.getByText("SEA -1.5 -110 (DraftKings)")).toBeInTheDocument();
-    expect(best.getByText("DEN ML +102 (DraftKings)")).toBeInTheDocument();
+    expect(within(comparison).getByRole("button", { name: "Log BetRivers DEN +1.5 -105" })).toBeInTheDocument();
+    expect(within(comparison).getByRole("button", { name: "Log DraftKings SEA -1.5 -110" })).toBeInTheDocument();
+    expect(within(comparison).getByRole("button", { name: "Log DraftKings DEN ML +102" })).toBeInTheDocument();
+    expect(within(comparison).getAllByText("No quote at this line")).toHaveLength(6);
+    expect(within(comparison).getAllByText("No tracked quote at this line")).toHaveLength(3);
     expect(screen.getByText("DEN spread: +2.5 → +1.5 over 2 snapshots")).toBeInTheDocument();
     expect(screen.getByText("Total: 43.5 → 42.5 over 2 snapshots")).toBeInTheDocument();
     expect(screen.getByText(/471 credits left/)).toBeInTheDocument();
     expect(screen.getByText(/DEN \+2\.5 · 43\.5/)).toBeInTheDocument();  // ESPN's opener
+  });
+
+  it("compares FanDuel only at the best offer's threshold and logs its exact quote", async () => {
+    const fanduel = book("FanDuel", "fanduel", 1.5, -108, -112);
+    fanduel.over_price = -105;
+    vi.mocked(fetchLines).mockResolvedValue(lines({
+      books: [...lines().books, fanduel],
+      best: {
+        spread_home: { book: "BetRivers", venue: "betrivers", price: -105, line: 1.5 },
+        spread_away: { book: "DraftKings", venue: "draftkings", price: -110, line: -1.5 },
+        over: { book: "FanDuel", venue: "fanduel", price: -105, line: 42.5 },
+      },
+    }));
+    renderPanel();
+    const comparison = await screen.findByRole("table", { name: "Best and FanDuel prices" });
+    const homeRow = within(comparison).getByRole("row", { name: /DEN \+1\.5/ });
+    expect(within(homeRow).getByRole("button", { name: "Log FanDuel DEN +1.5 -108" })).toBeInTheDocument();
+    fireEvent.click(within(homeRow).getByRole("button", { name: "Log FanDuel DEN +1.5 -108" }));
+    expect(screen.getByLabelText("Book")).toHaveValue("fanduel");
+    expect(screen.getByLabelText("Line")).toHaveValue(1.5);
+    expect(screen.getByLabelText("Price")).toHaveValue(-108);
+  });
+
+  it("does not show a FanDuel price from a different spread or total", async () => {
+    const fanduel = book("FanDuel", "fanduel", 2.5, -105, -115);
+    fanduel.total = 43.5;
+    vi.mocked(fetchLines).mockResolvedValue(lines({
+      books: [...lines().books, fanduel],
+      best: {
+        ...lines().best,
+        over: { book: "DraftKings", venue: "draftkings", price: -110, line: 42.5 },
+      },
+    }));
+    vi.mocked(fetchPredictionMarkets).mockResolvedValue({
+      generated_at: "", provider_status: {}, provider_details: {}, contract_counts: {}, contracts: [],
+    });
+    renderPanel();
+    const comparison = await screen.findByRole("table", { name: "Best and FanDuel prices" });
+    expect(within(comparison).getAllByText("No quote at this line")).toHaveLength(4);
+    expect(within(comparison).queryByRole("button", { name: /Log FanDuel .*\+1\.5|Log FanDuel Over 42\.5/ })).not.toBeInTheDocument();
+    expect(within(comparison).getByRole("button", { name: "Log FanDuel DEN ML +102" })).toBeInTheDocument();
+  });
+
+  it("keeps missing total and moneyline selections visible on a spread-only snapshot", async () => {
+    const spreadOnly = book("DraftKings", "draftkings", 1.5, -110, -110);
+    spreadOnly.total = spreadOnly.over_price = spreadOnly.under_price = spreadOnly.ml_home = spreadOnly.ml_away = null;
+    vi.mocked(fetchLines).mockResolvedValue(lines({
+      books: [spreadOnly],
+      best: { spread_home: { book: "DraftKings", venue: "draftkings", price: -110, line: 1.5 } },
+      consensus: { spread_home: 1.5, total: null, home_cover_prob: null, over_prob: null, home_win_prob: null, books: 1 },
+    }));
+    renderPanel();
+    const comparison = await screen.findByRole("table", { name: "Best and FanDuel prices" });
+    expect(within(comparison).getByRole("row", { name: /Over —/ })).toBeInTheDocument();
+    expect(within(comparison).getByRole("row", { name: /DEN ML/ })).toBeInTheDocument();
+    expect(within(comparison).getAllByText("No tracked quote at this line")).toHaveLength(5);
   });
 
   it("opens a bet form pre-filled from the clicked price and logs it", async () => {
@@ -126,7 +185,7 @@ describe("LinesPanel", () => {
     });
     vi.mocked(createBet).mockRejectedValue(new Error("Game not found"));
     renderPanel();
-    fireEvent.click(await screen.findAllByRole("button", { name: /Log DraftKings DEN ML/ }).then((all) => all[0]));
+    fireEvent.click(await screen.findByRole("button", { name: /Log DraftKings DEN ML/ }));
     expect(screen.getByLabelText("Market")).toHaveValue("moneyline");
     expect(screen.queryByLabelText("Line")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Stake ($)"), { target: { value: "5" } });
@@ -169,6 +228,20 @@ describe("LinesPanel", () => {
     );
     expect(await screen.findByText(/10am snapshot and shortly before the first and last tips/)).toBeInTheDocument();
     expect(screen.queryByText(/Tuesday/)).not.toBeInTheDocument();
+  });
+
+  it("requests prediction contracts for the game's sport", async () => {
+    vi.mocked(fetchLines).mockResolvedValue(lines());
+    vi.mocked(fetchPredictionMarkets).mockResolvedValue({
+      generated_at: "", provider_status: {}, provider_details: {}, contract_counts: {}, contracts: [],
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter><LinesPanel game={{ ...GAME, sport: "nba" }} /></MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(fetchPredictionMarkets).toHaveBeenCalledWith("nba", expect.anything()));
   });
 
   it("marks old prices as stale and shows only this game's Kalshi contracts", async () => {

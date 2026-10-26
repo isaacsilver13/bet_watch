@@ -168,6 +168,8 @@ def test_odds_api_client_bulk_request_uses_sport_path_and_featured_markets(
 ) -> None:
     async def scenario() -> None:
         def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/v4/sports/":
+                return httpx.Response(200, json=[], headers={"x-requests-remaining": "480"})
             assert request.url.path == expected_path
             requested_markets = set(request.url.params["markets"].split(","))
             # Alternates are per-event only; in bulk they cause 422 INVALID_MARKET.
@@ -201,6 +203,8 @@ def test_odds_api_client_requests_player_props_per_event(
 ) -> None:
     async def scenario() -> None:
         def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/v4/sports/":
+                return httpx.Response(200, json=[], headers={"x-requests-remaining": "480"})
             assert request.url.path == expected_path
             requested_markets = set(request.url.params["markets"].split(","))
             assert expected_markets.issubset(requested_markets)
@@ -221,6 +225,8 @@ def _bulk_endpoint_handler(requests: list[httpx.Request]):
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
+        if request.url.path == "/v4/sports/":
+            return httpx.Response(200, headers={"x-requests-remaining": "480"}, json=[])
         markets = set(request.url.params["markets"].split(","))
         unsupported = sorted(markets - allowed)
         if unsupported:
@@ -249,8 +255,8 @@ def test_bulk_request_only_asks_for_markets_the_bulk_endpoint_supports(sport: Sp
         )
 
         assert await client.fetch_odds(sport) == []
-        assert len(requests) == 1
-        assert requests[0].url.params["markets"] == "h2h,spreads,totals"
+        assert len(requests) == 2
+        assert requests[1].url.params["markets"] == "h2h,spreads,totals"
 
     asyncio.run(scenario())
 
@@ -261,6 +267,8 @@ def test_client_error_reports_status_and_body_and_is_not_retried() -> None:
 
         def handler(request: httpx.Request) -> httpx.Response:
             requests.append(request)
+            if request.url.path == "/v4/sports/":
+                return httpx.Response(200, headers={"x-requests-remaining": "480"}, json=[])
             return httpx.Response(
                 422,
                 json={"message": "Markets not supported", "error_code": "INVALID_MARKET"},
@@ -277,7 +285,7 @@ def test_client_error_reports_status_and_body_and_is_not_retried() -> None:
         assert "422" in str(error.value)
         assert "INVALID_MARKET" in str(error.value)
         assert "test-key" not in str(error.value)
-        assert len(requests) == 1  # a 4xx will never succeed on retry, and burns time
+        assert len(requests) == 2  # one free preflight and one non-retried paid request
 
     asyncio.run(scenario())
 

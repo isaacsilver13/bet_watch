@@ -8,6 +8,7 @@ from app.analytics.market import (
     book_quotes,
     consensus,
     consensus_history,
+    fresh_paired_main_offers,
 )
 
 T0 = datetime(2026, 10, 14, 15, 0, tzinfo=timezone.utc)
@@ -80,6 +81,40 @@ def test_book_quotes_keep_the_newest_offer_per_side() -> None:
     assert (quotes["dk"].ml_home, quotes["dk"].ml_away) == (None, -122)
     assert quotes["dk"].observed_at == later
     assert quotes["fd"].spread_home == 2.5 and quotes["fd"].spread_away_price == -110
+
+
+def test_model_input_uses_only_fresh_synchronized_two_sided_quotes() -> None:
+    now = T0 + timedelta(minutes=30)
+
+    def offer(book, market, side, line, at=T0, updated=T0):
+        return SideOffer(book, market, side, line, -110, at, updated)
+
+    valid = [offer("fd", "moneyline", "home", None),
+             offer("fd", "moneyline", "away", None)]
+    mismatched_capture = [offer("dk", "moneyline", "home", None),
+                          offer("dk", "moneyline", "away", None,
+                                at=T0 - timedelta(minutes=1),
+                                updated=T0 - timedelta(minutes=1))]
+    mismatched_update = [offer("mgm", "spread", "home", -3.5),
+                         offer("mgm", "spread", "away", 3.5,
+                               updated=T0 - timedelta(minutes=1))]
+    unmirrored = [offer("rivers", "spread", "home", -3.5),
+                  offer("rivers", "spread", "away", 4.5)]
+    unknown_update = [offer("espn", "moneyline", "home", None, updated=None),
+                      offer("espn", "moneyline", "away", None, updated=None)]
+    filtered = fresh_paired_main_offers(valid + mismatched_capture + mismatched_update
+                                        + unmirrored + unknown_update, now)
+    assert [(o.book, o.side) for o in filtered] == [("fd", "home"), ("fd", "away")]
+    # A newer incomplete capture cannot revive an older complete price.
+    later = offer("fd", "moneyline", "home", None, at=T0 + timedelta(minutes=1),
+                  updated=T0 + timedelta(minutes=1))
+    assert fresh_paired_main_offers(valid + [later], now) == []
+    assert fresh_paired_main_offers(valid, T0 + timedelta(hours=2)) == []
+    in_flight = [offer("fd", "moneyline", "home", None,
+                       updated=T0 + timedelta(seconds=2)),
+                 offer("fd", "moneyline", "away", None,
+                       updated=T0 + timedelta(seconds=2))]
+    assert len(fresh_paired_main_offers(in_flight, now)) == 2
 
 
 def test_history_has_one_consensus_per_snapshot_oldest_first() -> None:

@@ -46,6 +46,7 @@ def build_provider(settings: Optional[Settings] = None) -> OddsProvider:
                 timeout=active_settings.provider_timeout_seconds,
                 regions=active_settings.odds_regions,
                 bookmakers=active_settings.odds_bookmakers,
+                min_quota_remaining=active_settings.provider_min_quota_remaining,
             )
         )
     if active_settings.odds_provider == "fixture":
@@ -124,6 +125,19 @@ def _may_spend(request: Request) -> bool:
     header (or a non-loopback address) and still needs the token."""
     if _is_admin(request):
         return True
+    if getattr(request.state, "owner_session", False):
+        if request.url.path == "/api/v1/odds" and (
+            "force_refresh" in request.query_params or "include_props" in request.query_params
+        ):
+            # This GET can spend provider credits. A custom browser header blocks
+            # image/navigation CSRF, and Fetch Metadata or an exact Origin binds
+            # it to our own app (CORS is intentionally not enabled).
+            from app.api.owner_auth import _origin_allowed
+
+            return (request.headers.get("x-owner-action") == "refresh"
+                    and (request.headers.get("sec-fetch-site") == "same-origin"
+                         or _origin_allowed(request, load_settings())))
+        return True
     forwarded = request.headers.get("x-forwarded-for") or request.headers.get("fly-client-ip")
     local = request.client is not None and request.client.host in LOOPBACK
     return not settings.admin_refresh_secret and local and not forwarded
@@ -182,7 +196,7 @@ async def health_metrics(request: Request) -> dict[str, object]:
         "event_count": getattr(provider, "cached_event_count", 0),
         "cache_hit": getattr(provider, "cache_hit", False),
     }
-    if _is_admin(request):  # provider quota is operational data, not for anonymous callers
+    if _is_admin(request) or getattr(request.state, "owner_session", False):
         metrics["quota_remaining"] = getattr(provider, "quota_remaining", None)
         if kalshi is not None:
             metrics["kalshi"] = {
@@ -195,7 +209,8 @@ async def health_metrics(request: Request) -> dict[str, object]:
 async def health_errors(request: Request) -> dict[str, object]:
     # Fail closed: needs the admin secret even in fixture mode when one is configured, and is
     # unreachable in live mode without one.
-    if not (settings.admin_refresh_secret and _is_admin(request)):
+    if not ((settings.admin_refresh_secret and _is_admin(request))
+            or getattr(request.state, "owner_session", False)):
         raise HTTPException(status_code=403, detail="Forbidden")
     return {"errors": recent_errors()}
 
@@ -218,7 +233,7 @@ async def get_odds(
     ),
 ) -> ComparisonResponse:
     started_at = datetime.now(timezone.utc)
-    is_admin = _is_admin(request)
+    is_admin = _is_admin(request) or getattr(request.state, "owner_session", False)
     if force_refresh or include_props:
         if not _may_spend(request):
             reason = "unauthorized"

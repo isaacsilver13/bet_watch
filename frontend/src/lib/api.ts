@@ -33,6 +33,7 @@ export async function fetchOdds(
 
   const response = await fetch(`/api/v1/odds?${params.toString()}`, {
     signal: options.signal,
+    headers: options.forceRefresh || options.includeProps ? { "X-Owner-Action": "refresh" } : undefined,
   });
 
   if (!response.ok) {

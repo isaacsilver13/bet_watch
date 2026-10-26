@@ -98,11 +98,17 @@ class Settings:
     admin_refresh_budget_window_seconds: int = 86400
     raw_data_dir: str = "data/raw"
     nba_predictions_dir: str = "predictions"
+    nba_prediction_ingest_secret: Optional[str] = None
     fractional_kelly: float = 0.30  # mirrors the nba repo's experiment.py
     max_kelly: float = 0.08
     model_pick_stake: float = 25.0  # reference stake for pricing per-bet fees; never reported
     aisaac_dashboard_url: Optional[str] = None
     aisaac_internal_secret: Optional[str] = None
+    resend_api_key: Optional[str] = None
+    nba_newsletter_from_email: Optional[str] = None
+    nba_newsletter_to_email: Optional[str] = None
+    owner_password_hash: Optional[str] = None
+    owner_app_origin: Optional[str] = None
     internal_jobs_secret: Optional[str] = None  # guards /internal/* (cron-job.org, nba Actions)
 
 
@@ -145,10 +151,16 @@ def load_settings() -> Settings:
         raw_data_dir=_setting("RAW_DATA_DIR", "").strip() or str(_REPO_ROOT / "data" / "raw"),
         nba_predictions_dir=_setting("NBA_PREDICTIONS_DIR", "").strip()
         or str(_REPO_ROOT.parent / "nba_prediction" / "outputs" / "predictions"),
+        nba_prediction_ingest_secret=_setting("NBA_PREDICTION_INGEST_SECRET", "") or None,
         fractional_kelly=float(_setting("FRACTIONAL_KELLY", "0.30")),
         max_kelly=float(_setting("MAX_KELLY", "0.08")),
         model_pick_stake=float(_setting("MODEL_PICK_STAKE", "25")),
         aisaac_dashboard_url=_push_setting("AISAAC_DASHBOARD_URL"),
         aisaac_internal_secret=_push_setting("AISAAC_INTERNAL_SECRET"),
+        resend_api_key=_setting("RESEND_API_KEY", "") or None,
+        nba_newsletter_from_email=_setting("NBA_NEWSLETTER_FROM_EMAIL", "") or None,
+        nba_newsletter_to_email=_setting("NBA_NEWSLETTER_TO_EMAIL", "") or None,
+        owner_password_hash=_setting("OWNER_PASSWORD_HASH", "") or None,
+        owner_app_origin=_setting("OWNER_APP_ORIGIN", "").strip().rstrip("/") or None,
         internal_jobs_secret=_setting("INTERNAL_JOBS_SECRET", "") or None,
     )

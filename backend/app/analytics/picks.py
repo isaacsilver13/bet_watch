@@ -6,12 +6,12 @@ against early prices). Spreads are a `watchlist`: unproven, tracked for CLV only
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
-from statistics import NormalDist
 from typing import Optional
 
 from app.analytics.fees import fee_for
 from app.analytics.market import BookQuote, Consensus
 from app.analytics.pricing import decimal_odds
+from app.analytics.spread_curve import net_spread_ev, spread_mass
 from app.domain.venues import venue_for_book
 
 TARGETED_MIN_EV = 0.03
@@ -37,20 +37,22 @@ def expected_value(prob: float, american: int, fee: float, stake: float) -> floa
     return prob * decimal_odds(american) - 1 - fee / stake
 
 
-def kelly(ev: float, american: int, fraction: float, cap: float) -> float:
+def kelly(
+    ev: float, american: int, fraction: float, cap: float, decisive_prob: float = 1.0
+) -> float:
     """Fractional Kelly share of bankroll, clipped to [0, cap]. Without a fee, ev / b is the
     textbook (p(b+1) - 1) / b, as in the nba repo's experiment.py."""
-    return min(max(fraction * ev / (decimal_odds(american) - 1), 0.0), cap)
+    return min(max(fraction * ev / ((decimal_odds(american) - 1) * decisive_prob), 0.0), cap)
 
 
 def home_cover_prob(pred_margin: float, sigma: float, spread_home: float) -> float:
-    """P(home margin + spread_home > 0) with the margin ~ N(pred_margin, sigma).
-    ponytail: ignores pushes on whole-number lines; add a +-0.5 band if those picks matter."""
-    return NormalDist().cdf((pred_margin + spread_home) / sigma)
+    """P(home margin + spread_home > 0), with integer-score push mass retained."""
+    return spread_mass(pred_margin, sigma, spread_home).home_cover
 
 
 def _best(
-    quotes: Sequence[BookQuote], field: str, prob: float, on: date, stake: float
+    quotes: Sequence[BookQuote], field: str, prob: float, on: date, stake: float,
+    loss_prob: Optional[float] = None,
 ) -> Optional[tuple[str, int, float]]:
     """(book, price, ev) of the book whose price is worth most to us after its fee. Offers carry
     the feed's title ("FanDuel"); fees are keyed by venue ("fanduel"). Only Illinois venues can be
@@ -61,7 +63,10 @@ def _best(
         venue = venue_for_book(q.book)
         if price is None or venue is None:
             continue
-        priced.append((venue, price, expected_value(prob, price, fee_for(venue, stake, on), stake)))
+        fee = fee_for(venue, stake, on)
+        ev = (expected_value(prob, price, fee, stake) if loss_prob is None else
+              net_spread_ev(prob, loss_prob, price, fee, stake))
+        priced.append((venue, price, ev))
     return max(priced, key=lambda row: row[2]) if priced else None
 
 
@@ -92,18 +97,18 @@ def game_picks(
         return picks
     # Like best_prices: only books at the consensus number are compared.
     at_line = [q for q in quotes if q.spread_home == spread]
-    home_prob = home_cover_prob(pred_margin, sigma, spread)
+    mass = spread_mass(pred_margin, sigma, spread)
     home_mkt = market.home_cover_prob
-    for side, field, line, prob, market_prob in (
-        ("home", "spread_home_price", spread, home_prob, home_mkt),
-        ("away", "spread_away_price", -spread, 1 - home_prob,
+    for side, field, line, prob, loss_prob, market_prob in (
+        ("home", "spread_home_price", spread, mass.home_cover, mass.away_cover, home_mkt),
+        ("away", "spread_away_price", -spread, mass.away_cover, mass.home_cover,
          None if home_mkt is None else 1 - home_mkt),
     ):
-        best = _best(at_line, field, prob, on, stake)
+        best = _best(at_line, field, prob, on, stake, loss_prob)
         if best and best[2] > 0:
             book, price, ev = best
             picks.append(Pick("spread", side, line, book, price, prob, market_prob, ev,
-                              kelly(ev, price, fraction, cap), "watchlist"))
+                              kelly(ev, price, fraction, cap, 1 - mass.push), "watchlist"))
     return picks
 
 

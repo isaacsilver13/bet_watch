@@ -16,12 +16,12 @@ from typing import Optional
 from sqlalchemy import select
 
 from app.domain.models import Sport
-from app.ingest.odds_snapshot import PROVIDER, fetch_snapshot, ingest_snapshot
+from app.ingest.odds_snapshot import fetch_snapshot, ingest_snapshot
 from app.jobs.runner import JobContext, get_slot_info, update_slot
 from app.jobs.slots import CENTRAL, Slot
+from app.providers.errors import OddsProviderError, ProviderQuotaError
 from app.storage.games_repository import GamesRepository, aware
 from app.storage.models import JobSlot
-from app.storage.repository import OddsRepository
 
 logger = logging.getLogger(__name__)
 NAME = "odds_snapshot"
@@ -208,13 +208,21 @@ class OddsSnapshotJob:
                 self.sport.value, *targets
             ):
                 return "empty"
-            known = await OddsRepository(ctx.session_factory).latest_quota(PROVIDER)
-            if known is not None and known <= ctx.settings.provider_min_quota_remaining:
-                logger.warning("odds_snapshot skipped: %s credits left", known)
+            try:
+                remaining = await ctx.odds.fetch_quota_remaining()
+            except OddsProviderError as error:
+                logger.warning("odds_snapshot waiting for current quota: %s", error)
+                return "waiting"
+            if remaining <= ctx.settings.provider_min_quota_remaining:
+                logger.warning("odds_snapshot skipped: %s credits left", remaining)
                 return "skipped_quota"
-            path, quota = await fetch_snapshot(
-                ctx.odds, ctx.raw_dir, slot.key, now, self.sport
-            )
+            try:
+                path, quota = await fetch_snapshot(
+                    ctx.odds, ctx.raw_dir, slot.key, now, self.sport
+                )
+            except ProviderQuotaError as error:
+                logger.warning("odds_snapshot skipped after quota changed: %s", error)
+                return "skipped_quota"
             await update_slot(
                 ctx, self.name, slot.key, state="raw_saved", raw_path=str(path), at=now
             )
