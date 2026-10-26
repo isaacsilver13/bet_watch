@@ -143,13 +143,16 @@ async def run_due(jobs: Sequence[Job], ctx: JobContext, now: datetime) -> RunRes
                 # The job may have saved a paid response before it crashed; keep that state.
                 saved = await get_slot_info(ctx, job.name, slot.key)
                 state = "raw_saved" if saved.state == "raw_saved" else "pending"
-            attempts += 1
+            # Waiting for an upstream forecast or schedule is not a failed attempt.
+            # Preserve the slot until its end-of-day window closes.
+            if state != "waiting":
+                attempts += 1
             # Never fail a raw_saved slot: its response is paid for and only needs parsing.
             if state not in TERMINAL_STATES | {"raw_saved"} and attempts >= job.max_attempts:
                 state = "failed"
             await update_slot(ctx, job.name, slot.key, state=state, attempts=attempts, at=now)
             results[slot.key] = state
-            if state not in {"done", "empty", "skipped_quota"}:
+            if state not in {"done", "empty", "skipped_quota", "waiting"}:
                 results.had_failures = True
     error = (
         RuntimeError("One or more scheduled jobs did not complete")

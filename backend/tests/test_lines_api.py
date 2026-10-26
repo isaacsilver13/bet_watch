@@ -1,5 +1,6 @@
 import asyncio
 import json
+from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
@@ -47,6 +48,8 @@ def _body(spread_shift: float = 0.0, commence: str = KICKOFF) -> str:
 
 def _runtime(tmp_path, live=True, quota="450") -> Runtime:
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v4/sports/":
+            return httpx.Response(200, json=[], headers={"x-requests-remaining": quota})
         ODDS_CALLS.append(request.url)
         return httpx.Response(200, text=_body(), headers={"x-requests-remaining": quota})
 
@@ -117,6 +120,23 @@ def test_lines_show_the_latest_snapshot_per_book_with_best_prices_and_consensus(
     assert body["can_refresh"] is True and body["quota_remaining"] == 450
 
 
+def test_untracked_book_does_not_become_best_actionable_price(tmp_path) -> None:
+    payload = json.loads(_body())
+    offshore = deepcopy(payload[0]["bookmakers"][0])
+    offshore["key"] = "offshore"
+    offshore["title"] = "Offshore"
+    for market in offshore["markets"]:
+        for outcome in market["outcomes"]:
+            outcome["price"] = 1000
+    payload[0]["bookmakers"].append(offshore)
+
+    client = _client(tmp_path, [(FIRST, json.dumps(payload))])
+    body = client.get(f"/api/v1/games/{_den_id(tmp_path)}/lines").json()
+    assert next(book for book in body["books"] if book["book"] == "Offshore")["venue"] is None
+    assert all(best["venue"] is not None for best in body["best"].values())
+    assert all(best["book"] != "Offshore" for best in body["best"].values())
+
+
 def test_a_game_with_no_odds_yet_has_empty_lines_and_still_offers_a_refresh(tmp_path) -> None:
     client = _client(tmp_path)
     body = client.get(f"/api/v1/games/{_den_id(tmp_path)}/lines").json()
@@ -150,7 +170,7 @@ def test_refresh_makes_one_paid_call_saves_it_and_then_waits_out_the_cooldown(tm
 
 
 def test_refresh_stops_at_the_quota_floor(tmp_path) -> None:
-    client = _client(tmp_path, [(FIRST, _body())])
+    client = _client(tmp_path, [(FIRST, _body())], runtime=_runtime(tmp_path, quota="5"))
 
     async def drain() -> None:
         async with _factory(tmp_path)() as session, session.begin():
@@ -162,6 +182,15 @@ def test_refresh_stops_at_the_quota_floor(tmp_path) -> None:
     asyncio.run(drain())
     body = client.post(f"/api/v1/games/{_den_id(tmp_path)}/refresh").json()
     assert (body["refreshed"], body["reason"], body["quota_remaining"]) == (False, "quota", 5)
+    assert ODDS_CALLS == []
+
+
+def test_refresh_uses_current_quota_when_stored_balance_is_stale(tmp_path) -> None:
+    client = _client(tmp_path, [(FIRST, _body())], runtime=_runtime(tmp_path, quota="-4"))
+    body = client.post(f"/api/v1/games/{_den_id(tmp_path)}/refresh").json()
+    assert (body["refreshed"], body["reason"], body["quota_remaining"]) == (
+        False, "quota", -4
+    )
     assert ODDS_CALLS == []
 
 

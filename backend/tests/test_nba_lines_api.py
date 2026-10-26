@@ -58,6 +58,8 @@ def _client(tmp_path, snapshots=(), now=NOW) -> TestClient:
     asyncio.run(setup())
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v4/sports/":
+            return httpx.Response(200, json=[], headers={"x-requests-remaining": "447"})
         CALLS.append(request.url)
         return httpx.Response(200, text=_nba_body(), headers={"x-requests-remaining": "447"})
 

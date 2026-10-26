@@ -37,6 +37,12 @@ def direct_loopback(request: Request) -> bool:
     return peer_local and host_local
 
 
-def may_access_private_data(request: Request) -> bool:
+async def may_access_private_data(request: Request) -> bool:
+    from app.api.owner_auth import has_owner_session
+    from app.config import load_settings
+
     owner = bool(routes.settings.admin_refresh_secret) and routes._is_admin(request)
-    return owner or direct_loopback(request)
+    settings = load_settings()
+    session = await has_owner_session(request, settings)
+    request.state.owner_session = session
+    return owner or session or (settings.app_env != "production" and direct_loopback(request))

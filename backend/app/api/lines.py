@@ -102,7 +102,10 @@ async def get_lines(
         event_id=game.event_id,
         reference=slate_game.lines,
         books=[BookLine(venue=venue_for_book(q.book), **vars(q)) for q in quotes],
-        best=_best(best_prices(quotes, middle)),
+        # Only books mapped to a supported bet-log venue can be displayed as
+        # the best actionable price. Keep every book in the raw quote list and
+        # consensus for research and line movement.
+        best=_best(best_prices([q for q in quotes if venue_for_book(q.book)], middle)),
         consensus=ConsensusView(**vars(middle)) if quotes else None,
         history=[
             HistoryPoint(
@@ -141,11 +144,20 @@ async def refresh_game(
     latest = await repo.latest_snapshot_at(PROVIDER, sport)
     if latest is not None and now - aware(latest) < REFRESH_COOLDOWN:
         return RefreshResponse(refreshed=False, reason="recent", snapshot_at=aware(latest))
-    quota = await repo.latest_quota(PROVIDER)
-    if quota is not None and quota <= runtime.min_quota:
-        return RefreshResponse(refreshed=False, reason="quota", quota_remaining=quota)
     if not routes._allow_expensive_refresh(request):
-        return RefreshResponse(refreshed=False, reason="throttled", quota_remaining=quota)
+        return RefreshResponse(refreshed=False, reason="throttled")
+    try:
+        quota = await runtime.odds.fetch_quota_remaining()
+    except OddsProviderError as error:
+        await repo.record_refresh_failure(
+            PROVIDER, now, now, error.error_type, str(error), sport,
+            runtime.odds.quota_remaining,
+        )
+        raise HTTPException(
+            502, detail=f"Unable to verify provider quota: {error.error_type}"
+        ) from error
+    if quota <= runtime.min_quota:
+        return RefreshResponse(refreshed=False, reason="quota", quota_remaining=quota)
 
     kickoff = aware(game.start_time)
     slot_key = f"odds_snapshot:{sport.value}:manual:{now:%Y%m%dT%H%M%S}:{game_id}"

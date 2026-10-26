@@ -17,6 +17,7 @@ from app.jobs.model_picks import ModelPicksJob
 from app.jobs.nba import NBA_JOBS
 from app.jobs.nfl import JOBS as NFL_JOBS
 from app.jobs.odds import OddsSnapshotJob
+from app.jobs.paper_ledger import PaperLedgerJob, PaperSettlementJob
 from app.jobs.runner import JobContext, run_due, run_once
 from app.providers.the_odds_api.client import TheOddsApiClient
 from app.storage.database import create_engine, create_session_factory
@@ -28,7 +29,9 @@ JOBS = [
     OddsSnapshotJob(),
     OddsSnapshotJob(Sport.NBA, "odds_snapshot_nba"),
     ModelPicksJob(),  # after the NBA snapshot, so a tick that finishes it can price it at once
+    PaperLedgerJob(),  # freezes today's report before tip; no provider calls
     GradeBetsJob(),
+    PaperSettlementJob(),  # independent of personal-bet and CLV grading failures
 ]
 
 

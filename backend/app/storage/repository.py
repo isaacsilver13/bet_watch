@@ -9,6 +9,7 @@ from app.domain.models import Event, EventComparison, MarketType, Offer, Sport
 from app.storage.models import (
     EventRecord,
     OfferObservation,
+    PaperWager,
     ProviderEventMapping,
     ProviderRefreshRun,
 )
@@ -322,7 +323,10 @@ class OddsRepository:
         async with self.session_factory() as session:
             async with session.begin():
                 observations = await session.execute(
-                    delete(OfferObservation).where(OfferObservation.observed_at < cutoff)
+                    delete(OfferObservation).where(
+                        OfferObservation.observed_at < cutoff,
+                        ~OfferObservation.id.in_(select(PaperWager.quote_observation_id)),
+                    )
                 )
                 await session.execute(
                     delete(ProviderRefreshRun).where(

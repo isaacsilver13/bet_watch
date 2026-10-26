@@ -15,9 +15,12 @@ from app.analytics.picks import (
     kelly,
     track_record,
 )
+from app.analytics.portfolio import candidates_from_report
 from app.analytics.pricing import implied_prob, novig
+from app.analytics.spread_curve import net_spread_ev, spread_mass
 from app.api.slate import get_session_factory
 from app.config import load_settings
+from app.domain.forecasts import Predictions
 from app.domain.models import Sport
 from app.ingest.espn import parse_scoreboard
 from app.ingest.odds_raw import write_raw
@@ -31,8 +34,9 @@ from app.jobs.runner import JobContext, run_due, update_slot
 from app.jobs.slots import CENTRAL
 from app.main import app
 from app.storage.database import create_session_factory
+from app.storage.forecast_repository import store_forecast
 from app.storage.games_repository import GamesRepository
-from app.storage.models import ModelPick
+from app.storage.models import ModelPick, NbaReport
 from app.storage.settlement import grade_model_picks
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -53,8 +57,6 @@ PREDICTIONS = {
     "games": [
         {"game_date": "2026-01-15", "home": "GSW", "away": "NYK", "pred_margin": 10.0,
          "p_home_win": 0.80, "sigma": 14.0},
-        {"game_date": "2026-01-15", "home": "BOS", "away": "LAL", "pred_margin": 2.0,
-         "p_home_win": 0.55, "sigma": 14.0},  # no such game in bet_watch
     ],
 }
 
@@ -166,6 +168,20 @@ def test_moneylines_over_3pct_are_targeted_and_spreads_are_a_watchlist() -> None
         == ["watchlist"]
 
 
+def test_integer_spread_watchlist_accounts_for_pushes_in_ev_and_kelly() -> None:
+    quotes = [quote("BetRivers", spread_home=-3, spread_home_price=110,
+                    spread_away_price=-130)]
+    picks = game_picks(5, 0.5, 14, quotes, consensus(quotes), ON, 25, 0.3, 0.08)
+    home = next(pick for pick in picks if pick.market == "spread" and pick.side == "home")
+    mass = spread_mass(5, 14, -3)
+    assert mass.push > 0
+    assert home.model_prob == pytest.approx(mass.home_cover)
+    assert home.ev == pytest.approx(net_spread_ev(mass.home_cover, mass.away_cover, 110, 0, 25))
+    assert home.kelly_frac == pytest.approx(
+        min(0.3 * home.ev / (1.1 * (1 - mass.push)), 0.08)
+    )
+
+
 def test_the_track_record_counts_results_flat_roi_and_clv_per_tier() -> None:
     rows = track_record([
         PickFacts("targeted", 150, "won", 0.04),
@@ -239,6 +255,7 @@ def test_the_job_waits_for_todays_nba_odds_snapshot_to_finish(tmp_path, monkeypa
 def test_picks_are_priced_stored_and_reported_without_stakes(tmp_path, monkeypatch) -> None:
     async def scenario() -> None:
         ctx, sent = await _setup(tmp_path, monkeypatch)
+        await store_forecast(ctx.session_factory, Predictions.model_validate(PREDICTIONS))
         assert await ModelPicksJob().run(ctx, None) == "done"
         picks = await _picks(ctx)
         # GSW 80% at BetRivers -295 (no fee) beats DraftKings -300 less its $0.50 fee at $25.
@@ -256,16 +273,29 @@ def test_picks_are_priced_stored_and_reported_without_stakes(tmp_path, monkeypat
         assert request.headers["X-Internal-Secret"] == "test-secret"
         report = json.loads(request.content)
         assert set(report) == {"kind", "slate_date", "generated_at", "model_version",
-                               "data_through", "odds_as_of", "games", "picks", "track_record"}
+                               "forecast_sha256", "data_through", "odds_as_of", "games",
+                               "picks", "track_record"}
         assert (report["kind"], report["slate_date"]) == ("nba_daily_report", "2026-01-15")
         assert report["odds_as_of"] == SNAPSHOT.isoformat()
-        gsw, bos = report["games"]
+        (gsw,) = report["games"]
         assert (gsw["home"], gsw["tip"], gsw["market_spread_home"], gsw["books"]) == (
             "GSW", TIP.isoformat(), -7.5, 5)
-        assert bos["game_id"] is None  # predicted, but not on bet_watch's schedule
+        assert gsw["odds_as_of"] == SNAPSHOT.isoformat()
         first = report["picks"][0]
         assert (first["tier"], first["team"], first["book"], first["price_american"]) == (
             "targeted", "GSW", "betrivers", -295)
+        assert first["fanduel_price_american"] == -310
+        assert first["quote_observation_id"] > 0
+        assert first["paper_win_prob"] == pytest.approx(0.8)
+        assert first["model_prob_conditional"] == pytest.approx(first["model_prob"])
+        assert first["push_prob"] is None
+        spread_row = next(pick for pick in report["picks"] if pick["market"] == "spread")
+        assert spread_row["push_prob"] == 0
+        assert spread_row["model_prob_conditional"] == pytest.approx(
+            spread_row["model_prob"]
+        )
+        assert len(report["forecast_sha256"]) == 64
+        assert candidates_from_report(report)[0].quote_id == str(first["quote_observation_id"])
         assert report["track_record"][0]["tier"] == "targeted"
         assert report["track_record"][0]["picks"] == 1
         assert not [key for key in json.dumps(report).split('"') if "stake" in key or "$" in key]
@@ -273,10 +303,27 @@ def test_picks_are_priced_stored_and_reported_without_stakes(tmp_path, monkeypat
     asyncio.run(scenario())
 
 
-def test_no_predictions_file_means_no_picks_and_no_push(tmp_path, monkeypatch) -> None:
+def test_local_file_forecast_is_not_paper_eligible_without_durable_intake(
+    tmp_path, monkeypatch
+) -> None:
+    async def scenario() -> None:
+        ctx, sent = await _setup(tmp_path, monkeypatch)
+        assert await ModelPicksJob().run(ctx, None) == "done"
+        report = json.loads(sent[0].content)
+        assert report["forecast_sha256"] is None
+        assert report["picks"][0]["paper_win_prob"] is None
+        with pytest.raises(ValueError, match="provenance"):
+            candidates_from_report(report)
+
+    asyncio.run(scenario())
+
+
+def test_missing_predictions_for_a_game_day_retries_without_picks_or_push(
+    tmp_path, monkeypatch
+) -> None:
     async def scenario() -> None:
         ctx, sent = await _setup(tmp_path, monkeypatch, predictions=None)
-        assert await ModelPicksJob().run(ctx, None) == "empty"
+        assert await ModelPicksJob().run(ctx, None) == "waiting"
         assert await _picks(ctx) == [] and sent == []
 
     asyncio.run(scenario())
@@ -289,8 +336,35 @@ def test_only_todays_odds_are_priced_so_a_stale_snapshot_means_no_picks_and_no_p
         # The open snapshot failed (dead key), so the newest stored lines are from yesterday.
         ctx, sent = await _setup(tmp_path, monkeypatch, snapshot=SNAPSHOT - timedelta(days=1))
         await update_slot(ctx, "odds_snapshot_nba", ODDS_OPEN, state="failed")
-        assert await run_due([ModelPicksJob()], ctx, NOW) == {SLOT: "empty"}
+        assert await run_due([ModelPicksJob()], ctx, NOW) == {SLOT: "waiting"}
         assert await _picks(ctx) == [] and sent == []
+
+    asyncio.run(scenario())
+
+
+def test_new_incomplete_capture_between_preflight_and_pricing_waits_without_partial_slate(
+    tmp_path, monkeypatch
+) -> None:
+    async def scenario() -> None:
+        ctx, sent = await _setup(tmp_path, monkeypatch)
+        original = picks_job.side_offers
+        calls = 0
+
+        async def changing_offers(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            offers = await original(*args, **kwargs)
+            if calls == 2:
+                # A new capture publishes one side while this job is running.
+                newest = max(offer.observed_at for offer in offers) + timedelta(seconds=1)
+                return [*offers, replace(offers[0], observed_at=newest)]
+            return offers
+
+        monkeypatch.setattr(picks_job, "side_offers", changing_offers)
+        assert await ModelPicksJob().run(ctx, None) == "waiting"
+        assert calls == 2
+        assert await _picks(ctx) == []
+        assert sent == []
 
     asyncio.run(scenario())
 
@@ -305,13 +379,18 @@ def test_a_failed_push_keeps_the_picks_and_the_next_tick_only_retries_the_push(
         assert await run_due([job], ctx, NOW) == {SLOT: "pending"}
         first = [(p.id, p.price_american) for p in await _picks(ctx)]
         assert len(first) == 2 and len(sent) == 1
-        # Prices moved since; the retry re-sends the picks already priced, not new ones.
+        # Even after tip and a local row mutation, a retry sends the exact saved report.
+        original_report = json.loads(sent[0].content)
+        async with ctx.session_factory() as session:
+            assert (await session.get(NbaReport, ON)).payload == original_report
         async with ctx.session_factory() as session, session.begin():
             for pick in (await session.scalars(select(ModelPick))).all():
                 pick.price_american = -290
-        assert await run_due([job], ctx, NOW + timedelta(minutes=15)) == {SLOT: "done"}
+        after_tip = TIP + timedelta(hours=5)  # 02:00 Central on the next calendar day
+        monkeypatch.setattr(picks_job, "_now", lambda: after_tip)
+        assert await run_due([job], ctx, after_tip) == {SLOT: "done"}
         assert [p.id for p in await _picks(ctx)] == [pid for pid, _ in first]
-        assert json.loads(sent[1].content)["picks"][0]["price_american"] == -290
+        assert json.loads(sent[1].content) == original_report
 
     asyncio.run(scenario())
 
@@ -352,8 +431,9 @@ def test_the_push_target_falls_back_to_the_shared_aisaac_push_file(tmp_path, mon
 
 def test_the_job_is_registered_after_the_nba_snapshot() -> None:
     names = [job.name for job in JOBS]
-    assert names.index("odds_snapshot_nba") < names.index("model_picks") < names.index(
-        "grade_bets")
+    assert (names.index("odds_snapshot_nba") < names.index("model_picks")
+            < names.index("paper_ledger") < names.index("grade_bets")
+            < names.index("paper_settlement"))
 
 
 # --- grading ---------------------------------------------------------------------------------

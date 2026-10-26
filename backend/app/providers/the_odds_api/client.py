@@ -8,6 +8,7 @@ from app.domain.models import MarketType, Sport
 from app.providers.errors import (
     ProviderAuthError,
     ProviderPayloadError,
+    ProviderQuotaError,
     ProviderRateLimitError,
     ProviderRequestRejectedError,
     ProviderTimeoutError,
@@ -75,6 +76,7 @@ class TheOddsApiClient:
         transport: Optional[httpx.AsyncBaseTransport] = None,
         regions: str = "us",
         bookmakers: tuple = (),
+        min_quota_remaining: int = 0,
     ) -> None:
         # With a bookmaker allowlist, send only `bookmakers` (it overrides `regions`).
         self.coverage = (
@@ -86,6 +88,7 @@ class TheOddsApiClient:
         self.backoff_seconds = backoff_seconds
         self.transport = transport
         self.quota_remaining: Optional[int] = None
+        self.min_quota_remaining = min_quota_remaining
 
     @classmethod
     def from_settings(cls, settings: Settings) -> Optional["TheOddsApiClient"]:
@@ -99,9 +102,11 @@ class TheOddsApiClient:
             backoff_seconds=settings.provider_backoff_seconds,
             regions=settings.odds_regions,
             bookmakers=settings.odds_bookmakers,
+            min_quota_remaining=settings.provider_min_quota_remaining,
         )
 
     async def fetch_odds(self, sport: Sport) -> list[dict[str, Any]]:
+        await self._require_quota()
         sport_name = sport.value.upper()  # Convert Sport enum to string like "NFL", "NBA"
         markets = SPORT_MARKETS.get(sport_name, CORE_MARKETS)
         payload = await self._get_json(
@@ -128,6 +133,7 @@ class TheOddsApiClient:
         markets = SPORT_PLAYER_PROP_MARKETS.get(sport_name, ())
         if not markets:
             return {}
+        await self._require_quota()
         payload = await self._get_json(
             f"/sports/{sport_key(sport)}/events/{event_id}/odds",
             {
@@ -143,6 +149,7 @@ class TheOddsApiClient:
 
     async def fetch_odds_raw(self, sport: Sport) -> str:
         """The bulk odds response body, unparsed, so a paid call can be saved before it is read."""
+        await self._require_quota()
         response = await self._get(
             f"/sports/{sport_key(sport)}/odds",
             {
@@ -153,6 +160,21 @@ class TheOddsApiClient:
             },
         )
         return response.text
+
+    async def fetch_quota_remaining(self) -> int:
+        """Read the zero-credit sports endpoint before a scheduled paid request."""
+        await self._get("/sports/", {"apiKey": self.api_key})
+        if self.quota_remaining is None:
+            raise ProviderPayloadError("The Odds API omitted its remaining-credits header")
+        return self.quota_remaining
+
+    async def _require_quota(self) -> None:
+        remaining = await self.fetch_quota_remaining()
+        if remaining <= self.min_quota_remaining:
+            raise ProviderQuotaError(
+                f"Provider quota is {remaining}; refresh threshold is "
+                f"{self.min_quota_remaining}"
+            )
 
     async def _get_json(self, path: str, params: dict[str, str]) -> Any:
         return (await self._get(path, params)).json()
