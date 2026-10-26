@@ -30,9 +30,10 @@ Standalone NFL and NBA odds comparison app.
 
 ## Local matchup hub
 
-This app is **local-only**: it runs on your PC against docker-compose Postgres and will hold
-private data. CI no longer deploys; the existing Fly app is left as it is until the owner
-decides what to do with it. Analysis here is statistically honest context, not betting advice.
+The UI runs on your PC; the scheduled jobs run on the Fly app `bet-watch`, a jobs-only service
+(see "Scheduled jobs in production"). Both use the same Neon Postgres, so set `DATABASE_URL` in
+`.env` to it (docker-compose Postgres still works for fixture-mode development). Analysis here is
+statistically honest context, not betting advice.
 
 1. `docker compose up -d postgres`
 2. `copy .env.example .env` (defaults: fixture odds, persistence on)
@@ -43,11 +44,24 @@ decides what to do with it. Analysis here is statistically honest context, not b
    `python -m app.jobs weather`
 5. `uvicorn app.main:app --app-dir backend --reload --port 8000`, and `npm run dev` in `frontend/`
 6. Open `http://localhost:5173/nfl`. The odds board is at `/odds`.
-7. `powershell -ExecutionPolicy Bypass -File scripts/register_run_due_task.ps1 -RepoRoot <checkout>`
-   runs `python -m app.jobs run-due` every 15 minutes while the PC is on. This is what keeps odds
-   current: opening a page never calls the Odds API, it only reads what the scheduled
-   `odds_snapshot` jobs (or a Refresh button) stored. Hours the PC was off are marked `missed`
-   once and never retried.
+7. Scheduled jobs: in production cron-job.org runs `run-due` on Fly (below). For a local-only
+   setup, `scripts/register_run_due_task.ps1 -RepoRoot <checkout>` still registers the Windows
+   task, but never run both against one database. Opening a page never calls the Odds API; it only
+   reads what the scheduled `odds_snapshot` jobs (or a Refresh button) stored. Windows that pass
+   with no tick are marked `missed` once and never retried.
+
+### Scheduled jobs in production
+
+The Fly app `bet-watch` (`fly.toml`, deployed by CI on master) serves only:
+
+- `POST /internal/run-due`: cron-job.org, every 15 min from 07:00 to 23:45 CT. It runs every job's
+  due slots and returns slot-state counts. It answers `busy` while the previous tick runs, and is
+  always 200 (cron-job.org disables jobs that fail repeatedly); failures show on `/ops`.
+- `POST /internal/nba-predictions`: the nba repo's daily workflow uploads that day's predictions
+  (the `tools/predict_today.py` contract), which `model_picks` reads at 10:15 CT.
+
+Both need `X-Internal-Secret: $INTERNAL_JOBS_SECRET`. Raw odds files and predictions live on the
+`data` volume (`/data`). Everything else on Fly is behind the private boundary below.
 
 Click a game on the slate to open its matchup page (`/game/<id>`): records against the spread,
 season efficiency with league ranks, rest and travel, injuries (with a flag when last week's
@@ -232,19 +246,20 @@ The Vite development server proxies `/api` to `http://127.0.0.1:8000`.
 `npm run test:browser` starts credential-isolated fixture servers and runs the responsive Playwright
 smoke test in desktop and mobile viewports. It never reads the repository `.env`.
 The multi-stage Docker build still compiles this frontend and has FastAPI serve it from the same
-origin as `/api/v1`, but nothing deploys it: the app is local-only (see "Local matchup hub").
+origin as `/api/v1`. On Fly that UI sits behind the private boundary, so in practice it is used locally.
 
 
 ## Private local application boundary
 
-This application holds a private bet journal and is local-only. Bind the API and
+This application holds a private bet journal; its UI is local. Bind the local API and
 Vite to loopback. Direct requests must have a loopback peer and localhost/loopback
 Host, with no forwarding headers or hostile browser Origin/Fetch Metadata.
 The default Vite origins on port 5173 and the API origin are accepted. Other requests require the existing owner
 `X-Admin-Token`; keep it out of client bundles and URLs. Only aggregate health/status
 GET endpoints remain public. This boundary also protects journal-derived badges,
 operations and static UI, rather than protecting only `/bets` while leaking data
-through another route. CI intentionally does not deploy this app.
+through another route. The Fly deployment keeps this boundary; only `POST /internal/*` passes
+it, behind `INTERNAL_JOBS_SECRET`.
 
 `run-due` continues processing independent jobs after failures, but logs a failed
 heartbeat and exits nonzero for incomplete/failed/missed work. A fresh heartbeat

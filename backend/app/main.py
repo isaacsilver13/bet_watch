@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app import error_log
 from app.api.bets import router as bets_router
 from app.api.forecasts import router as forecasts_router
+from app.api.internal import router as internal_router
 from app.api.lines import router as lines_router
 from app.api.matchup import router as matchup_router
 from app.api.nba_reports import router as nba_reports_router
@@ -42,6 +43,7 @@ app.include_router(forecasts_router)
 app.include_router(owner_auth_router)
 app.include_router(nba_reports_router)
 app.include_router(paper_ledger_router)
+app.include_router(internal_router)
 
 # Serves the built frontend from the same app/port as the API, so the two no
 # longer need separate Fly apps. No-op locally, where this directory doesn't
@@ -73,6 +75,8 @@ async def private_application_boundary(request, call_next):
         "/health", "/api/v1/health", "/api/v1/health/ready",
         "/api/v1/health/metrics", "/api/v1/status",
     }
+    # /internal/* checks its own secret (app/api/internal.py); everything else stays private.
+    internal = request.method == "POST" and request.url.path.startswith("/internal/")
     internal_forecast = (
         request.method == "POST" and request.url.path == "/api/v1/internal/nba-predictions"
     )
@@ -87,7 +91,7 @@ async def private_application_boundary(request, call_next):
     login_asset = (bool(settings.owner_password_hash) and request.method == "GET"
                    and (request.url.path == "/login"
                         or request.url.path.startswith("/assets/")))
-    if not internal_forecast and not (
+    if not internal and not internal_forecast and not (
         request.method == "GET" and request.url.path in public_health
     ) and not auth_entry and not login_asset:
         if not await may_access_private_data(request):

@@ -10,6 +10,12 @@ VITE_API_URL = "/api/v1"
 [deploy]
 release_command = "alembic upgrade head"
 
+# Raw odds responses and the nba repo's uploaded predictions. One volume pins one machine,
+# which the in-process run-due lock relies on (app/api/internal.py).
+[mounts]
+source = "data"
+destination = "/data"
+
 [http_service]
 internal_port = 8000
 force_https = true
@@ -39,3 +45,9 @@ PROVIDER_MIN_QUOTA_REMAINING = "5"
 KALSHI_ENABLED = "false"
 KALSHI_CACHE_TTL_SECONDS = "300"
 KALSHI_BASE_URL = "https://external-api.kalshi.com/trade-api/v2"
+RAW_DATA_DIR = "/data/raw"
+NBA_PREDICTIONS_DIR = "/data/predictions"
+# The free-tier Illinois books (.env.example); unset would price the whole `us` region.
+ODDS_BOOKMAKERS = "draftkings,fanduel,betmgm,betrivers,espnbet"
+# model_picks pushes the NBA report here. Update with the AIsaac Fly rename (aisaac-dashboard -> aisaac).
+AISAAC_DASHBOARD_URL = "https://aisaac.fly.dev"

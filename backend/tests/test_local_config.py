@@ -24,10 +24,18 @@ def test_env_example_has_no_paid_only_books_and_enables_persistence() -> None:
     assert "PERSISTENCE_ENABLED=true" in text
 
 
-def test_ci_never_deploys() -> None:
+def test_ci_deploys_only_from_master_pushes() -> None:
     workflow = (REPO / ".github" / "workflows" / "ci-deploy.yml").read_text(encoding="utf-8")
-    assert "flyctl" not in workflow
-    assert "deploy:" not in workflow
+    deploy = workflow.split("\n  deploy:\n", 1)[1]
+    assert "if: github.ref == 'refs/heads/master' && github.event_name == 'push'" in deploy
+    assert "needs: [backend-test, frontend-build]" in deploy
+
+
+def test_fly_keeps_job_state_on_its_volume() -> None:
+    fly = (REPO / "fly.toml").read_text(encoding="utf-8")
+    assert 'destination = "/data"' in fly
+    assert 'RAW_DATA_DIR = "/data/raw"' in fly
+    assert 'NBA_PREDICTIONS_DIR = "/data/predictions"' in fly
 
 
 def test_dotenv_is_isolated_for_tests() -> None:
