@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { BetForm } from "./BetForm";
 import { LineChart } from "./LineChart";
+import { MarketContext } from "./MarketContext";
 import { PredictionPanel } from "./PredictionMarkets";
 import { fetchPredictionMarkets } from "../lib/api";
 import type { BetDraft, Market, Selection } from "../lib/bets";
@@ -17,6 +18,7 @@ import {
   type LinesResponse,
 } from "../lib/lines";
 import type { SlateGame } from "../lib/slate";
+import type { ContextResponse } from "../lib/matchup";
 
 const STALE_AFTER_HOURS = 24;
 
@@ -29,86 +31,117 @@ function when(iso: string): string {
 const percent = (value: number | null) => (value === null ? "—" : `${(value * 100).toFixed(1)}%`);
 
 function PriceButton({
-  book, text, draft, onPick,
-}: { book: BookLine; text: string; draft: Omit<BetDraft, "venue">; onPick: (draft: BetDraft) => void }) {
+  book, venue, label, price, draft, onPick,
+}: { book: string; venue: string | null; label: string; price: number; draft: Omit<BetDraft, "venue">; onPick: (draft: BetDraft) => void }) {
   return (
     <button
-      aria-label={`Log ${book.book} ${text}`}
+      aria-label={`Log ${book} ${label} ${formatPrice(price)}`}
       className="price-button"
-      onClick={() => onPick({ ...draft, venue: book.venue ?? "other" })}
+      onClick={() => onPick({ ...draft, venue: venue ?? "other" })}
       type="button"
     >
-      {text}
+      {formatPrice(price)}
     </button>
   );
 }
 
-function BookRow({ book, game, onPick }: { book: BookLine; game: SlateGame; onPick: (draft: BetDraft) => void }) {
-  const { home, away } = game;
-  const side = (market: Market, selection: Selection, line: number | null, price: number | null, text: string) =>
-    price === null ? null : (
-      <PriceButton book={book} draft={{ market, selection, line, price }} onPick={onPick} text={text} />
-    );
-  const spreadAway = book.spread_home === null ? null : -book.spread_home;
-  return (
-    <tr>
-      <th scope="row">{book.book}</th>
-      <td>
-        {side("spread", "away", spreadAway, book.spread_away_price, `${away.abbr} ${formatLine(spreadAway)} ${formatPrice(book.spread_away_price)}`)}
-        {side("spread", "home", book.spread_home, book.spread_home_price, `${home.abbr} ${formatLine(book.spread_home)} ${formatPrice(book.spread_home_price)}`)}
-      </td>
-      <td>
-        {side("total", "over", book.total, book.over_price, `Over ${book.total} ${formatPrice(book.over_price)}`)}
-        {side("total", "under", book.total, book.under_price, `Under ${book.total} ${formatPrice(book.under_price)}`)}
-      </td>
-      <td>
-        {side("moneyline", "away", null, book.ml_away, `${away.abbr} ML ${formatPrice(book.ml_away)}`)}
-        {side("moneyline", "home", null, book.ml_home, `${home.abbr} ML ${formatPrice(book.ml_home)}`)}
-      </td>
-    </tr>
-  );
-}
-
-function bestText(name: string, best: BestView, game: SlateGame): string {
+function sideLabel(name: string, line: number | null, game: SlateGame): string {
   const label: Record<string, string> = {
-    spread_home: `${game.home.abbr} ${formatLine(best.line)}`,
-    spread_away: `${game.away.abbr} ${formatLine(best.line)}`,
-    over: `Over ${best.line}`,
-    under: `Under ${best.line}`,
+    spread_home: `${game.home.abbr} ${formatLine(line)}`,
+    spread_away: `${game.away.abbr} ${formatLine(line)}`,
+    over: `Over ${line ?? "—"}`,
+    under: `Under ${line ?? "—"}`,
     ml_home: `${game.home.abbr} ML`,
     ml_away: `${game.away.abbr} ML`,
   };
-  return `${label[name] ?? name} ${formatPrice(best.price)} (${best.book})`;
+  return label[name] ?? name;
 }
 
-function Summary({ lines, game }: { lines: LinesResponse; game: SlateGame }) {
+const SIDES: { name: string; market: Market; selection: Selection }[] = [
+  { name: "spread_away", market: "spread", selection: "away" },
+  { name: "spread_home", market: "spread", selection: "home" },
+  { name: "over", market: "total", selection: "over" },
+  { name: "under", market: "total", selection: "under" },
+  { name: "ml_away", market: "moneyline", selection: "away" },
+  { name: "ml_home", market: "moneyline", selection: "home" },
+];
+
+function fanduelPrice(book: BookLine | undefined, name: string, line: number | null): number | null {
+  if (!book) return null;
+  if (name !== "ml_home" && name !== "ml_away" && line === null) return null;
+  if (name === "spread_home") return book.spread_home === line ? book.spread_home_price : null;
+  if (name === "spread_away") return book.spread_home === (line === null ? null : -line) ? book.spread_away_price : null;
+  if (name === "over") return book.total === line ? book.over_price : null;
+  if (name === "under") return book.total === line ? book.under_price : null;
+  if (name === "ml_home") return book.ml_home;
+  return book.ml_away;
+}
+
+function PriceComparison({ lines, game, onPick }: { lines: LinesResponse; game: SlateGame; onPick: (draft: BetDraft) => void }) {
   const { consensus } = lines;
   if (!consensus) return null;
   const spread = consensus.spread_home === null ? "—" : `${game.home.abbr} ${formatLine(consensus.spread_home)}`;
+  const fanduel = lines.books.find((book) => book.venue === "fanduel");
   return (
     <>
       <p className="lines-consensus">
         Consensus of {consensus.books} books: {spread} · O/U {consensus.total ?? "—"} ·{" "}
         {game.home.abbr} win {percent(consensus.home_win_prob)} (vig removed)
       </p>
-      <ul className="best-prices" aria-label="Best prices">
-        {["spread_away", "spread_home", "over", "under", "ml_away", "ml_home"]
-          .filter((name) => lines.best[name])
-          .map((name) => <li key={name}>{bestText(name, lines.best[name], game)}</li>)}
-      </ul>
+      <p className="price-comparison-note">Spread and total prices are compared at the same consensus line. Click a price to log a bet.</p>
+      <div className="table-scroll">
+        <table className="lines-table" aria-label="Best and FanDuel prices">
+          <thead><tr><th scope="col">Selection</th><th scope="col">Best tracked book</th><th scope="col">FanDuel at this line</th></tr></thead>
+          <tbody>
+            {SIDES.map(({ name, market, selection }) => {
+              const best: BestView | undefined = lines.best[name];
+              const line = best?.line ?? (market === "spread"
+                ? (consensus.spread_home === null ? null : selection === "home" ? consensus.spread_home : -consensus.spread_home)
+                : market === "total" ? consensus.total : null);
+              const label = sideLabel(name, line, game);
+              const fdPrice = fanduelPrice(fanduel, name, line);
+              const bestBook = best && lines.books.find((book) => book.book === best.book);
+              return (
+                <tr key={name}>
+                  <th scope="row">{label}</th>
+                  <td>
+                    {best ? (
+                      <>
+                        <PriceButton book={best.book} venue={best.venue} label={label} price={best.price}
+                          draft={{ market, selection, line, price: best.price }} onPick={onPick} />
+                        <small>{best.book} · {bestBook ? when(bestBook.observed_at) : "Time unavailable"}</small>
+                      </>
+                    ) : <span className="missing-price">No tracked quote at this line</span>}
+                  </td>
+                  <td>
+                    {fdPrice === null ? <span className="missing-price">No quote at this line</span> : (
+                      <PriceButton book="FanDuel" venue="fanduel" label={label} price={fdPrice}
+                        draft={{ market, selection, line, price: fdPrice }} onPick={onPick} />
+                    )}
+                    {fanduel && fdPrice !== null && <small>FanDuel · {when(fanduel.observed_at)}</small>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </>
   );
 }
 
-export function LinesPanel({ game }: { game: SlateGame }) {
+export function LinesPanel({
+  game, context, contextLoading = false, contextError = null,
+}: { game: SlateGame; context?: ContextResponse | null; contextLoading?: boolean; contextError?: Error | null }) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<BetDraft | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const lines = useQuery({ queryKey: ["lines", game.id], queryFn: ({ signal }) => fetchLines(game.id, signal) });
   const eventId = lines.data?.event_id ?? null;
+  const sport = game.sport === "nba" ? "nba" : "nfl";
   const kalshi = useQuery({
-    queryKey: ["kalshi", "nfl"],
-    queryFn: ({ signal }) => fetchPredictionMarkets("nfl", signal),
+    queryKey: ["kalshi", sport],
+    queryFn: ({ signal }) => fetchPredictionMarkets(sport, signal),
     enabled: eventId !== null,
   });
   const refresh = useMutation({
@@ -160,22 +193,10 @@ export function LinesPanel({ game }: { game: SlateGame }) {
           {data.can_refresh ? ", or use Refresh prices" : ""}.
         </p>
       ) : (
-        <>
-          <Summary game={game} lines={data} />
-          <div className="table-scroll">
-            <table className="lines-table">
-              <thead>
-                <tr>
-                  <th scope="col">Book</th><th scope="col">Spread</th><th scope="col">Total</th><th scope="col">Moneyline</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.books.map((book) => <BookRow book={book} game={game} key={book.book} onPick={pick} />)}
-              </tbody>
-            </table>
-          </div>
-        </>
+        <PriceComparison game={game} lines={data} onPick={pick} />
       )}
+
+      {context !== undefined && <MarketContext context={context} error={contextError} loading={contextLoading} />}
 
       <div className="chart-row">
         <LineChart

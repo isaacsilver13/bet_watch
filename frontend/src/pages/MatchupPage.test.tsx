@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -118,6 +118,35 @@ describe("MatchupPage", () => {
     expect(screen.getByRole("tab", { name: "Lines" })).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByText("No sportsbook prices yet")).toBeInTheDocument();
     expect(screen.queryByLabelText("Recent games")).not.toBeInTheDocument();  // only for the context tabs
+  });
+
+  it("pairs spread, total and moneyline history with the selected bet category", async () => {
+    vi.mocked(fetchGame).mockResolvedValue(GAME);
+    vi.mocked(fetchContext).mockResolvedValue(context());
+    renderPage();
+    const spread = await screen.findByRole("table", { name: "spread historical records" });
+    expect(within(spread).getByRole("row", { name: /This season/ })).toHaveTextContent("2-12-1");
+    expect(screen.getByText(/Recent games can cross a season boundary/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Total" }));
+    const total = screen.getByRole("table", { name: "total historical records" });
+    expect(within(total).getByRole("row", { name: /This season/ })).toHaveTextContent("2-0-12-0-1");
+    fireEvent.click(screen.getByRole("button", { name: "Moneyline" }));
+    const moneyline = screen.getByRole("table", { name: "moneyline historical records" });
+    expect(within(moneyline).getByRole("row", { name: /This season/ })).toHaveTextContent("2-12-1");
+    expect(screen.getByText(/Straight-up records use final scores/)).toBeInTheDocument();
+    expect(screen.getByText(/last starting QB Bo Nix is Questionable/)).toBeInTheDocument();
+  });
+
+  it("distinguishes loading, failed, and stale historical context on the Lines tab", async () => {
+    vi.mocked(fetchGame).mockResolvedValue(GAME);
+    vi.mocked(fetchContext).mockImplementationOnce(() => new Promise(() => {}));
+    const view = renderPage();
+    expect(await screen.findByText("Loading historical context…")).toBeInTheDocument();
+    view.unmount();
+
+    vi.mocked(fetchContext).mockRejectedValueOnce(new Error("Context request failed"));
+    renderPage();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Historical context unavailable: Context request failed");
   });
 
   it("shows the records tab with both teams' tallies", async () => {
@@ -318,5 +347,20 @@ describe("MatchupPage for an NBA game", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "Records" }));
     expect(await screen.findByText(/ATS and O\/U use ESPN's closing line/)).toBeInTheDocument();
     expect(screen.queryByText(/nflverse/)).not.toBeInTheDocument();
+  });
+
+  it("labels NBA head-to-head limits beside the category history", async () => {
+    renderPage();
+    expect(await screen.findByText(/Earlier head-to-head results do not account for which players appeared/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Total" }));
+    expect(screen.getByText(/Pace \(possessions per 48\)/)).toBeInTheDocument();
+  });
+
+  it("does not imply NBA availability is current when the injury snapshot is stale", async () => {
+    const stale = nbaContext();
+    stale.data_as_of.injuries = "2020-01-01T00:00:00Z";
+    vi.mocked(fetchContext).mockResolvedValue(stale);
+    renderPage();
+    expect(await screen.findByText("Current availability unavailable: injury data is missing or stale.")).toBeInTheDocument();
   });
 });
