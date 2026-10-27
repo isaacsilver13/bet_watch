@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 
 import { GlassCard } from "./GlassCard";
+import { isStale, whenZoned } from "../lib/board";
 import {
   VENUES,
   createBet,
@@ -82,6 +83,13 @@ export function BetForm({ game, draft, onClose }: { game: SlateGame; draft: BetD
     <GlassCard className="bet-form">
       <form onSubmit={submit}>
         <h4>Log a bet · {game.away.abbr} @ {game.home.abbr}</h4>
+        {draft?.quote && (
+          <p className="quote-source" role="status">
+            Quote: {draft.quote.book} · observed {whenZoned(draft.quote.observed_at)}
+            {!draft.quote.actionable || isStale(draft.quote.observed_at)
+              ? " · saved snapshot, may no longer be available" : ""}
+          </p>
+        )}
         <div className="bet-fields">
           <label>
             <span className="control-label">Book</span>

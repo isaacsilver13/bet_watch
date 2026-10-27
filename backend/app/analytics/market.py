@@ -200,6 +200,18 @@ def best_prices(quotes: Sequence[BookQuote], reference: Consensus) -> dict[str, 
     return best
 
 
+def coverage(quotes: Sequence[BookQuote], reference: Consensus) -> dict[str, tuple[int, int]]:
+    """Per market: books quoting it, and books quoting it at the consensus line."""
+    spread = [q.spread_home for q in quotes if q.spread_home is not None]
+    total = [q.total for q in quotes if q.total is not None]
+    both = sum(q.ml_home is not None and q.ml_away is not None for q in quotes)
+    return {
+        "spread": (len(spread), spread.count(reference.spread_home)),
+        "total": (len(total), total.count(reference.total)),
+        "moneyline": (both, both),  # a moneyline has no number to differ on
+    }
+
+
 def consensus_history(offers: Iterable[SideOffer]) -> list[tuple[datetime, Consensus]]:
     """One consensus per snapshot, oldest first, for the line-movement chart."""
     by_snapshot: dict[datetime, list[SideOffer]] = defaultdict(list)

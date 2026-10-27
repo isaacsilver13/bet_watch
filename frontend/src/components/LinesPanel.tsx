@@ -2,11 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { BetForm } from "./BetForm";
+import { BookComparison } from "./BookComparison";
 import { LineChart } from "./LineChart";
 import { MarketContext } from "./MarketContext";
 import { PredictionPanel } from "./PredictionMarkets";
+import { ResearchBrief } from "./ResearchBrief";
 import { fetchPredictionMarkets } from "../lib/api";
 import type { BetDraft, Market, Selection } from "../lib/bets";
+import { DEFAULT_MARKET, MARKETS, isActionable, type MarketId } from "../lib/board";
 import {
   REFRESH_REASONS,
   fetchLines,
@@ -130,6 +133,30 @@ function PriceComparison({ lines, game, onPick }: { lines: LinesResponse; game: 
   );
 }
 
+function NflPrices({ lines, game, onPick }: { lines: LinesResponse; game: SlateGame; onPick: (draft: BetDraft) => void }) {
+  const [market, setMarket] = useState<MarketId>(DEFAULT_MARKET);
+  const { consensus } = lines;
+  const spread = consensus?.spread_home == null ? "—" : `${game.home.abbr} ${formatLine(consensus.spread_home)}`;
+  return (
+    <>
+      {consensus && (
+        <p className="lines-consensus">
+          Sportsbook consensus of {consensus.books} books (vig removed, a market estimate, not bettor splits): {spread} · O/U {consensus.total ?? "—"} ·{" "}
+          {game.home.abbr} win {percent(consensus.home_win_prob)}
+        </p>
+      )}
+      <div className="segmented-control market-tabs" role="tablist" aria-label="Choose market">
+        {MARKETS.map((entry) => (
+          <button aria-selected={market === entry.id} className={market === entry.id ? "active" : ""} key={entry.id}
+            onClick={() => setMarket(entry.id)} role="tab" type="button">{entry.label}</button>
+        ))}
+      </div>
+      <BookComparison actionable={isActionable(game)} data={lines} game={game} market={market}
+        onPick={onPick} snapshotAt={lines.snapshot_at} />
+    </>
+  );
+}
+
 export function LinesPanel({
   game, context, contextLoading = false, contextError = null,
 }: { game: SlateGame; context?: ContextResponse | null; contextLoading?: boolean; contextError?: Error | null }) {
@@ -192,8 +219,21 @@ export function LinesPanel({
             : "the Tuesday, Thursday, Saturday and Sunday snapshots and shortly before kickoff"}
           {data.can_refresh ? ", or use Refresh prices" : ""}.
         </p>
+      ) : game.sport === "nfl" ? (
+        <NflPrices game={game} lines={data} onPick={pick} />
       ) : (
         <PriceComparison game={game} lines={data} onPick={pick} />
+      )}
+
+      {game.sport === "nfl" && (
+        <ResearchBrief
+          bookMove={data.history.length ? { first_at: data.history[0].observed_at, spread_home: data.history[0].spread_home, total: data.history[0].total, snapshots: data.history.length } : null}
+          bookNow={data.consensus}
+          context={context ?? null}
+          contextError={contextError}
+          contextLoading={contextLoading}
+          game={game}
+        />
       )}
 
       {context !== undefined && <MarketContext context={context} error={contextError} loading={contextLoading} />}
@@ -201,16 +241,16 @@ export function LinesPanel({
       <div className="chart-row">
         <LineChart
           format={(value) => formatLine(value)}
-          label={`${game.home.abbr} spread`}
+          label={`${game.home.abbr} spread${game.sport === "nfl" ? " (book consensus)" : ""}`}
           points={data.history.filter((p) => p.spread_home !== null).map((p) => ({ at: p.observed_at, value: p.spread_home! }))}
         />
         <LineChart
-          label="Total"
+          label={game.sport === "nfl" ? "Total (book consensus)" : "Total"}
           points={data.history.filter((p) => p.total !== null).map((p) => ({ at: p.observed_at, value: p.total! }))}
         />
       </div>
 
-      <dl className="reference-lines">
+      <dl aria-label="Reference lines" className="reference-lines">
         {(["open", "current", "close"] as const).filter((kind) => data.reference[kind]).map((kind) => {
           const line = data.reference[kind]!;
           return (

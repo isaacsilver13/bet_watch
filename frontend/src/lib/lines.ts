@@ -40,6 +40,7 @@ export interface LinesResponse {
   books: BookLine[];
   best: Record<string, BestView>;
   consensus: ConsensusView | null;
+  coverage?: Record<string, { quoting: number; at_line: number }>;
   history: HistoryPoint[];
   snapshot_at: string | null;
   quota_remaining: number | null;
