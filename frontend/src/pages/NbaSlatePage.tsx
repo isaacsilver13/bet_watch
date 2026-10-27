@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { AppHeader } from "../components/AppHeader";
+
 import { GameCard } from "../components/GameCard";
 import { fetchDaySlate } from "../lib/slate";
 
@@ -22,15 +24,12 @@ export function NbaSlatePage() {
 
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">NBA slate</p>
-          <h1>{data ? dayTitle(data.date) : "Slate"}</h1>
-        </div>
-        <nav className="app-nav" aria-label="Sections">
-          <Link to="/nfl">NFL</Link> · <Link to="/bets">Bets</Link> · <Link to="/odds">Odds board</Link> · <Link to={`/nba/report/${data?.date ?? date ?? ""}`}>Daily report</Link>
-        </nav>
-      </header>
+      <AppHeader
+        eyebrow="NBA slate"
+        extra={<Link to={`/nba/report/${data?.date ?? date ?? ""}`}>Daily report</Link>}
+        sport="nba"
+        title={data ? dayTitle(data.date) : "Slate"}
+      />
 
       <section className="control-band" aria-label="Day picker">
         <button className="text-button" disabled={!data?.previous} onClick={() => go(data?.previous)} type="button">

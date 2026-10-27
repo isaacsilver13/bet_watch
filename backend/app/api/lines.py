@@ -10,7 +10,14 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.analytics.market import BestPrice, best_prices, book_quotes, consensus, consensus_history
+from app.analytics.market import (
+    BestPrice,
+    best_prices,
+    book_quotes,
+    consensus,
+    consensus_history,
+    coverage,
+)
 from app.api import routes
 from app.api.slate import get_now, get_session_factory, load_slate_games
 from app.config import load_settings
@@ -18,6 +25,7 @@ from app.domain.lines import (
     BestView,
     BookLine,
     ConsensusView,
+    Coverage,
     HistoryPoint,
     LinesResponse,
     RefreshResponse,
@@ -61,6 +69,10 @@ def _best(best: dict[str, BestPrice]) -> dict[str, BestView]:
         name: BestView(book=b.book, venue=venue_for_book(b.book), price=b.price, line=b.line)
         for name, b in best.items()
     }
+
+
+def _coverage(quotes, middle) -> dict[str, Coverage]:
+    return {k: Coverage(quoting=q, at_line=a) for k, (q, a) in coverage(quotes, middle).items()}
 
 
 async def _game_row(session: AsyncSession, game_id: int) -> Game:
@@ -107,6 +119,7 @@ async def get_lines(
         # consensus for research and line movement.
         best=_best(best_prices([q for q in quotes if venue_for_book(q.book)], middle)),
         consensus=ConsensusView(**vars(middle)) if quotes else None,
+        coverage=_coverage(quotes, middle),
         history=[
             HistoryPoint(
                 observed_at=when,

@@ -185,32 +185,40 @@ async def get_slate(
     now: datetime = Depends(get_now),
 ) -> SlateResponse:
     async with session_factory() as session:
-        if season is None or week is None:
-            resolved = await resolve_week(session, sport, now)
-            if resolved is None:
-                raise HTTPException(404, detail=NO_DATA)
-            season, season_type, week = resolved
-        season_type = season_type or "REG"
+        return await week_slate(session, sport, season, season_type, week, now)
 
-        week_rows = (
-            await session.execute(
-                select(Game.season_type, Game.week)
-                .where(Game.sport == sport, Game.season == season, Game.week.is_not(None))
-                .distinct()
-            )
-        ).all()
-        weeks = sorted(
-            (WeekRef(season_type=kind, week=number) for kind, number in week_rows),
-            key=lambda ref: (SEASON_TYPE_ORDER.get(ref.season_type, 9), ref.week),
+
+async def week_slate(
+    session: AsyncSession, sport: str, season: Optional[int], season_type: Optional[str],
+    week: Optional[int], now: datetime,
+) -> SlateResponse:
+    """The week's games (the current or next week when none is named) and the season's weeks."""
+    if season is None or week is None:
+        resolved = await resolve_week(session, sport, now)
+        if resolved is None:
+            raise HTTPException(404, detail=NO_DATA)
+        season, season_type, week = resolved
+    season_type = season_type or "REG"
+
+    week_rows = (
+        await session.execute(
+            select(Game.season_type, Game.week)
+            .where(Game.sport == sport, Game.season == season, Game.week.is_not(None))
+            .distinct()
         )
-        games = await load_slate_games(
-            session,
-            Game.sport == sport,
-            Game.season == season,
-            Game.season_type == season_type,
-            Game.week == week,
-            now=now,
-        )
+    ).all()
+    weeks = sorted(
+        (WeekRef(season_type=kind, week=number) for kind, number in week_rows),
+        key=lambda ref: (SEASON_TYPE_ORDER.get(ref.season_type, 9), ref.week),
+    )
+    games = await load_slate_games(
+        session,
+        Game.sport == sport,
+        Game.season == season,
+        Game.season_type == season_type,
+        Game.week == week,
+        now=now,
+    )
     return SlateResponse(
         sport=sport, season=season, season_type=season_type, week=week, weeks=weeks, games=games
     )

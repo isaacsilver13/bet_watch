@@ -303,3 +303,101 @@ select { min-height: 39px; border: 1px solid var(--line); border-radius: 8px; co
 .report-table { width: 100%; border-collapse: collapse; white-space: nowrap; }
 .report-table th, .report-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; font-size: 0.82rem; }
 .report-table th { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* NFL week board */
+.page-title { font-size: clamp(1.9rem, 4.2vw, 3.2rem); line-height: 1; }
+.topbar.app-header { gap: 20px; flex-wrap: wrap; padding-bottom: 20px; }
+.wordmark { color: var(--accent); text-decoration: none; font-weight: 600; }
+.app-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; }
+.sport-switch { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; }
+.sport-switch a { padding: 6px 14px; color: var(--muted); }
+.sport-switch a[aria-current="page"] { color: var(--ink); background: rgba(165, 180, 252, 0.2); }
+.back-row { margin: 14px 0 0; }
+.back-row a { color: var(--secondary); }
+.week-controls { justify-content: flex-start; gap: 12px; align-items: end; }
+.board-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0 0; }
+.board-status .freshness { margin: 0; font-size: 0.78rem; }
+.board-controls { flex-wrap: wrap; justify-content: flex-start; }
+.board-controls label { display: grid; gap: 6px; }
+.book-filter { border: 0; padding: 0; align-self: end; position: relative; }
+.book-filter summary { min-height: 39px; display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; color: var(--muted); list-style: none; }
+.book-filter fieldset { position: absolute; z-index: 20; display: grid; gap: 8px; min-width: 210px; margin: 6px 0 0; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface-solid); padding: 12px 14px; }
+.check { display: flex; align-items: center; gap: 8px; }
+.check input { width: auto; min-height: 0; }
+.scope-note { margin: 12px 0 0; color: var(--secondary); font-size: 0.82rem; }
+.board-status + .control-band + .scope-note, .scope-note + .notice { margin-top: 12px; }
+
+.nfl-board { display: grid; gap: 8px; margin-top: 12px; font-variant-numeric: tabular-nums; }
+.day-heading { margin: 22px 0 10px; font-size: 1rem; font-weight: 600; color: var(--accent); letter-spacing: 0.04em; text-transform: uppercase; font-family: "DM Mono", monospace; max-width: none; }
+.game-row { display: grid; gap: 14px 22px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-solid); padding: 16px 18px; grid-template-columns: minmax(150px, 0.9fr) minmax(170px, 1fr) minmax(210px, 1.1fr); }
+.game-identity h3 { margin: 0 0 4px; font-size: 1.2rem; }
+.game-identity h3 a { color: var(--ink); text-decoration: none; }
+.game-identity h3 a:hover { text-decoration: underline; }
+.game-time { margin: 0; font-family: "DM Mono", monospace; font-size: 0.82rem; color: var(--secondary); }
+.game-identity .slate-venue { margin: 4px 0 0; }
+.lane-label { display: block; color: var(--muted); font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.lane-value { display: block; margin-top: 2px; font-family: "DM Mono", monospace; font-size: 0.92rem; }
+.game-move p { margin: 0 0 10px; }
+.game-best { display: grid; gap: 8px; align-content: start; }
+.best-side { display: grid; gap: 3px; }
+.side-name { font-size: 0.82rem; color: var(--ink); font-weight: 600; }
+.best-side small, .coverage { color: var(--muted); font-size: 0.72rem; }
+.coverage { display: block; }
+
+.price-button { position: relative; display: inline-flex; align-items: center; gap: 8px; width: auto; min-height: 36px; margin: 2px 0; padding: 6px 11px; font-variant-numeric: tabular-nums; }
+.price-button .price-text { font-size: 0.95rem; }
+.price-tag { border-radius: 999px; background: rgba(167, 243, 208, 0.16); color: var(--accent); padding: 1px 7px; font-size: 0.6rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.price-tag.muted { background: rgba(154, 168, 195, 0.14); color: var(--muted); }
+.best-price-cell { border-color: var(--accent); color: var(--accent); background: rgba(167, 243, 208, 0.08); }
+.other-number { border-style: dashed; color: var(--muted); }
+.price-static { cursor: default; }
+.price-button:disabled { cursor: not-allowed; }
+
+.book-strip { display: none; grid-column: 1 / -1; grid-auto-flow: column; grid-auto-columns: minmax(120px, 1fr); gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+.book-column { display: grid; gap: 4px; align-content: start; }
+.book-name { color: var(--muted); font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; }
+.game-flags { display: flex; flex-wrap: wrap; gap: 6px; grid-column: 1 / -1; margin: 0; padding: 0; list-style: none; }
+.flag { border: 1px solid var(--line-strong); border-radius: 999px; padding: 3px 11px; font-size: 0.78rem; color: var(--ink); }
+.flag-qb { border-color: rgba(251, 191, 36, 0.5); color: #fde68a; }
+.flag-move { border-color: rgba(165, 180, 252, 0.5); color: #c7d2fe; }
+.game-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.game-actions .text-button { align-self: auto; min-height: 40px; }
+.game-actions [aria-expanded="true"] { border-color: var(--secondary); color: var(--ink); background: rgba(165, 180, 252, 0.16); }
+.game-panel { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: 14px; min-width: 0; }
+.game-row .bet-form { grid-column: 1 / -1; margin-top: 0; }
+.quote-source { margin: 6px 0 0; color: var(--secondary); font-family: "DM Mono", monospace; font-size: 0.78rem; }
+.comparison-note { margin: 0 0 10px; color: var(--muted); font-size: 0.8rem; }
+.book-table thead th small { display: block; margin-top: 2px; font-size: 0.6rem; letter-spacing: 0; text-transform: none; }
+.book-table td { min-width: 150px; }
+
+.research-brief { margin: 18px 0; }
+.brief-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.brief-card { border: 1px solid var(--line); border-radius: 12px; background: rgba(9, 15, 31, 0.5); padding: 14px 16px; }
+.brief-card h4 { margin: 0 0 8px; }
+.brief-card p { margin: 0 0 6px; font-size: 0.86rem; }
+.brief-card small { display: block; margin-top: 8px; color: var(--muted); font-size: 0.7rem; }
+
+@media (min-width: 1280px) {
+  .game-row { grid-template-columns: 190px 200px 230px minmax(0, 1fr); }
+  .book-strip { display: grid; grid-column: auto; grid-auto-columns: minmax(118px, 1fr); border-top: 0; padding-top: 0; }
+  .game-flags, .game-actions { grid-column: 1 / -1; }
+  .game-actions { grid-column: 1 / -1; }
+}
+@media (max-width: 1279px) and (min-width: 768px) {
+  .game-row { grid-template-columns: minmax(150px, 0.8fr) minmax(230px, 1.2fr); }
+  .game-move { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 28px; }
+}
+@media (max-width: 767px) {
+  .game-row { grid-template-columns: minmax(0, 1fr); padding: 14px; }
+  .game-move { display: flex; flex-wrap: wrap; gap: 4px 22px; }
+  .game-actions .text-button { flex: 1 1 140px; }
+  .board-controls { display: grid; grid-template-columns: 1fr 1fr; }
+  .board-controls .market-tabs { grid-column: 1 / -1; flex-wrap: nowrap; }
+  .board-controls .market-tabs button { flex: 1; }
+  .week-controls { display: grid; grid-template-columns: auto 1fr auto; }
+  .week-controls .text-button { align-self: end; }
+  .app-nav { gap: 6px 14px; }
+}
+.price-text { white-space: nowrap; }
+.book-column .price-button { flex-wrap: wrap; gap: 2px 6px; }
+.book-column .price-tag { font-size: 0.55rem; }

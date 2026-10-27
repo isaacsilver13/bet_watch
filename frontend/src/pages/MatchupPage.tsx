@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 
+import { AppHeader } from "../components/AppHeader";
 import { GlassCard } from "../components/GlassCard";
 import { LinesPanel } from "../components/LinesPanel";
 import {
@@ -260,21 +261,21 @@ export function MatchupPage() {
   const sport = game.data?.sport ?? context.data?.sport ?? "nfl";
   const tabs = sport === "nba" ? NBA_TABS : NFL_TABS;
   const active = tabs.find((entry) => entry.id === tab) ?? tabs[0];
-  const slateLink = game.data ? slatePath(game.data) : "/nfl";
+  // Back returns to the board exactly as it was left (market, books, expanded game), when it
+  // was the page that opened this one.
+  const from = (useLocation().state as { from?: string } | null)?.from;
+  const slateLink = from ?? (game.data ? slatePath(game.data) : "/nfl");
   const onContextTab = active.asOf !== null;
   const error = game.error ?? (onContextTab ? context.error : null);
 
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">Matchup</p>
-          <h1>{game.data ? `${game.data.away.name} at ${game.data.home.name}` : "Matchup"}</h1>
-        </div>
-        <nav className="app-nav" aria-label="Sections">
-          <Link to={slateLink}>Back to slate</Link> · <Link to="/bets">Bets</Link>
-        </nav>
-      </header>
+      <AppHeader
+        eyebrow="Matchup"
+        sport={sport === "nba" ? "nba" : "nfl"}
+        title={game.data ? `${game.data.away.name} at ${game.data.home.name}` : "Matchup"}
+      />
+      <p className="back-row"><Link to={slateLink}>{sport === "nba" ? "Back to slate" : "Back to week"}</Link></p>
 
       {error && <div className="notice error-notice" role="alert">{error instanceof Error ? error.message : "Could not load the matchup"}</div>}
       {game.data && <GameHeader game={game.data} />}

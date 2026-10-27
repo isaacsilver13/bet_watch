@@ -19,6 +19,8 @@ export interface BetDraft {
   selection: Selection;
   line: number | null;
   price: number | null;
+  /** Where the number came from, shown before saving. The bet's own placed_at is unaffected. */
+  quote?: { book: string; observed_at: string; actionable: boolean };
 }
 
 export interface BetGame {

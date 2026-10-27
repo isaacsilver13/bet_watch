@@ -36,6 +36,13 @@ class ConsensusView(BaseModel):
     books: int
 
 
+class Coverage(BaseModel):
+    """How many of the books in scope quote a market, and how many do so at the consensus line."""
+
+    quoting: int
+    at_line: int
+
+
 class HistoryPoint(BaseModel):
     observed_at: datetime
     spread_home: Optional[float]
@@ -50,6 +57,7 @@ class LinesResponse(BaseModel):
     books: list[BookLine]  # latest snapshot only
     best: dict[str, BestView]
     consensus: Optional[ConsensusView]
+    coverage: dict[str, Coverage] = {}  # spread | total | moneyline
     history: list[HistoryPoint]  # one consensus per snapshot, oldest first
     snapshot_at: Optional[datetime]
     quota_remaining: Optional[int]  # shown only to an admin

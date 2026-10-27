@@ -155,7 +155,7 @@ describe("MatchupPage", () => {
     renderPage();
     fireEvent.click(await screen.findByRole("tab", { name: "Records" }));
     expect((await screen.findAllByText("2-1 SU · 2-1 ATS · 2-0-1 O/U")).length).toBe(2);
-    expect(screen.getByRole("link", { name: "Back to slate" })).toHaveAttribute("href", "/nfl/2026/reg/6");
+    expect(screen.getByRole("link", { name: "Back to week" })).toHaveAttribute("href", "/nfl/2026/reg/6");
   });
 
   it("shows efficiency with league ranks", async () => {

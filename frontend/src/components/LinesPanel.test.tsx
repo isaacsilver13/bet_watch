@@ -25,8 +25,11 @@ vi.mock("../lib/api", async (importOriginal) => {
 
 const GAME = {
   id: 7, home: { id: 10, abbr: "DEN", name: "Denver Broncos" }, away: { id: 26, abbr: "SEA", name: "Seattle Seahawks" },
-  sport: "nfl",
-} as SlateGame;
+  sport: "nfl", lines: {}, weather: null, roof: "outdoors", spread_move: null, total_move: null,
+  status: "scheduled", start_time: "2999-01-01T00:00:00Z",
+} as unknown as SlateGame;
+// The NBA keeps the compact best-vs-FanDuel table; the NFL gets the all-books comparison.
+const NBA_GAME = { ...GAME, sport: "nba" } as SlateGame;
 
 function book(name: string, venue: string | null, spreadHome: number, home: number, away: number): BookLine {
   return {
@@ -56,11 +59,11 @@ function lines(overrides: Partial<LinesResponse> = {}): LinesResponse {
   };
 }
 
-function renderPanel() {
+function renderPanel(game: SlateGame = GAME) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter><LinesPanel game={GAME} /></MemoryRouter>
+      <MemoryRouter><LinesPanel game={game} /></MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -84,7 +87,7 @@ describe("LinesPanel", () => {
     vi.mocked(fetchPredictionMarkets).mockResolvedValue({
       generated_at: "", provider_status: {}, provider_details: {}, contract_counts: {}, contracts: [],
     });
-    renderPanel();
+    renderPanel(NBA_GAME);
     const comparison = await screen.findByRole("table", { name: "Best and FanDuel prices" });
     expect(within(comparison).getByRole("columnheader", { name: "Best tracked book" })).toBeInTheDocument();
     expect(within(comparison).queryByRole("columnheader", { name: "Book" })).not.toBeInTheDocument();
@@ -111,7 +114,7 @@ describe("LinesPanel", () => {
         over: { book: "FanDuel", venue: "fanduel", price: -105, line: 42.5 },
       },
     }));
-    renderPanel();
+    renderPanel(NBA_GAME);
     const comparison = await screen.findByRole("table", { name: "Best and FanDuel prices" });
     const homeRow = within(comparison).getByRole("row", { name: /DEN \+1\.5/ });
     expect(within(homeRow).getByRole("button", { name: "Log FanDuel DEN +1.5 -108" })).toBeInTheDocument();
@@ -134,7 +137,7 @@ describe("LinesPanel", () => {
     vi.mocked(fetchPredictionMarkets).mockResolvedValue({
       generated_at: "", provider_status: {}, provider_details: {}, contract_counts: {}, contracts: [],
     });
-    renderPanel();
+    renderPanel(NBA_GAME);
     const comparison = await screen.findByRole("table", { name: "Best and FanDuel prices" });
     expect(within(comparison).getAllByText("No quote at this line")).toHaveLength(4);
     expect(within(comparison).queryByRole("button", { name: /Log FanDuel .*\+1\.5|Log FanDuel Over 42\.5/ })).not.toBeInTheDocument();
@@ -149,7 +152,7 @@ describe("LinesPanel", () => {
       best: { spread_home: { book: "DraftKings", venue: "draftkings", price: -110, line: 1.5 } },
       consensus: { spread_home: 1.5, total: null, home_cover_prob: null, over_prob: null, home_win_prob: null, books: 1 },
     }));
-    renderPanel();
+    renderPanel(NBA_GAME);
     const comparison = await screen.findByRole("table", { name: "Best and FanDuel prices" });
     expect(within(comparison).getByRole("row", { name: /Over —/ })).toBeInTheDocument();
     expect(within(comparison).getByRole("row", { name: /DEN ML/ })).toBeInTheDocument();
@@ -185,6 +188,7 @@ describe("LinesPanel", () => {
     });
     vi.mocked(createBet).mockRejectedValue(new Error("Game not found"));
     renderPanel();
+    fireEvent.click(await screen.findByRole("tab", { name: "Moneyline" }));
     fireEvent.click(await screen.findByRole("button", { name: /Log DraftKings DEN ML/ }));
     expect(screen.getByLabelText("Market")).toHaveValue("moneyline");
     expect(screen.queryByLabelText("Line")).not.toBeInTheDocument();
