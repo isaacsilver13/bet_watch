@@ -105,11 +105,17 @@ def _offers(
                 provider_offer_id=f"{event_key}:{book}:{odd_id}",
                 provider_updated_at=quote.get("lastUpdatedAt"),
                 observed_at=observed_at,
-                deep_link=quote.get("deeplink"),
+                deep_link=_link(quote.get("deeplink")),
                 status=OfferStatus.AVAILABLE,
             )
         )
     return offers
+
+
+def _link(value: Any) -> Optional[str]:
+    """The feed's link is rendered as an href, so only a plain http(s) URL that fits the column."""
+    ok = isinstance(value, str) and value.lower().startswith(("https://", "http://"))
+    return value if ok and len(value) <= 500 else None
 
 
 def _number(value: Any) -> Optional[float]:

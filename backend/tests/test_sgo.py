@@ -64,6 +64,17 @@ def test_only_tracked_available_full_game_prices_become_offers() -> None:
     assert {o.provider for o in comparison.offers} == {"sgo"}
 
 
+def test_only_plain_http_links_are_kept() -> None:
+    def link(url):
+        page = {"data": [{**PAGE["data"][0], "odds": {"points-home-game-ml-home": {"byBookmaker": {
+            "draftkings": _quote("-150", deeplink=url)}}}}]}
+        return normalize_events([page], Sport.NBA, OBSERVED)[0].offers[0].deep_link
+
+    assert link("https://sportsbook.draftkings.com/x") == "https://sportsbook.draftkings.com/x"
+    assert link("javascript:alert(1)") is None and link("data:text/html,x") is None
+    assert link("https://a.com/" + "x" * 500) is None and link(None) is None
+
+
 def _sgo(calls, left=2000, status=200):
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["x-api-key"] == "sgo-key" and "sgo-key" not in str(request.url)
