@@ -16,7 +16,7 @@ from typing import Optional
 from sqlalchemy import select
 
 from app.domain.models import Sport
-from app.ingest.odds_snapshot import fetch_snapshot, ingest_snapshot
+from app.ingest.odds_snapshot import fetch_sgo_snapshot, fetch_snapshot, ingest_snapshot
 from app.jobs.runner import JobContext, get_slot_info, update_slot
 from app.jobs.slots import CENTRAL, Slot
 from app.providers.errors import OddsProviderError, ProviderQuotaError
@@ -143,7 +143,7 @@ class OddsSnapshotJob:
         return []  # which slots exist depends on the schedule in the database: plan_slots
 
     async def plan_slots(self, ctx: JobContext, now: datetime) -> list[Slot]:
-        if ctx.odds is None or ctx.settings is None:
+        if (ctx.odds is None and ctx.sgo is None) or ctx.settings is None:
             return []  # fixture mode, or no key: nothing to spend
         nba = self.sport is Sport.NBA
         if nba:
@@ -189,9 +189,11 @@ class OddsSnapshotJob:
         return slots
 
     async def run(self, ctx: JobContext, slot: Slot) -> str:
-        if ctx.odds is None or ctx.settings is None:
+        if (ctx.odds is None and ctx.sgo is None) or ctx.settings is None:
             # Only reachable by a manual `python -m app.jobs odds_snapshot`: run-due plans no slots.
-            raise RuntimeError(f"{self.name} needs PROVIDER_MODE=live and a THE_ODDS_API_KEY")
+            raise RuntimeError(
+                f"{self.name} needs PROVIDER_MODE=live and a THE_ODDS_API_KEY or SGO_API_KEY"
+            )
         now = _now()
         manual_end = (
             now + timedelta(hours=36)
@@ -208,21 +210,39 @@ class OddsSnapshotJob:
                 self.sport.value, *targets
             ):
                 return "empty"
-            try:
-                remaining = await ctx.odds.fetch_quota_remaining()
-            except OddsProviderError as error:
-                logger.warning("odds_snapshot waiting for current quota: %s", error)
-                return "waiting"
-            if remaining <= ctx.settings.provider_min_quota_remaining:
-                logger.warning("odds_snapshot skipped: %s credits left", remaining)
-                return "skipped_quota"
-            try:
-                path, quota = await fetch_snapshot(
-                    ctx.odds, ctx.raw_dir, slot.key, now, self.sport
-                )
-            except ProviderQuotaError as error:
-                logger.warning("odds_snapshot skipped after quota changed: %s", error)
-                return "skipped_quota"
+            floor = ctx.settings.provider_min_quota_remaining
+            use_odds_api = ctx.odds is not None
+            if ctx.odds is not None:
+                try:
+                    remaining = await ctx.odds.fetch_quota_remaining()
+                except OddsProviderError as error:
+                    logger.warning("odds_snapshot waiting for current quota: %s", error)
+                    return "waiting"
+                if remaining <= floor:
+                    logger.warning("odds_snapshot: %s Odds API credits left", remaining)
+                    use_odds_api = False
+            if use_odds_api:
+                try:
+                    path, quota = await fetch_snapshot(
+                        ctx.odds, ctx.raw_dir, slot.key, now, self.sport
+                    )
+                except ProviderQuotaError as error:
+                    logger.warning("odds_snapshot skipped after quota changed: %s", error)
+                    use_odds_api = False
+            if not use_odds_api:  # out of Odds API credits (or no key): SGO's free tier, if any
+                if ctx.sgo is None:
+                    return "skipped_quota"
+                try:
+                    left = await ctx.sgo.fetch_quota_remaining()  # None = unreadable: carry on
+                    if left is not None and left <= floor:
+                        logger.warning("odds_snapshot skipped: %s SGO events left", left)
+                        return "skipped_quota"
+                    path = await fetch_sgo_snapshot(
+                        ctx.sgo, ctx.raw_dir, slot.key, now, self.sport, targets
+                    )
+                except OddsProviderError as error:
+                    logger.warning("odds_snapshot waiting on SGO: %s", error)
+                    return "waiting"
             await update_slot(
                 ctx, self.name, slot.key, state="raw_saved", raw_path=str(path), at=now
             )

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
 from app.jobs.slots import TERMINAL_STATES, Slot
+from app.providers.sgo.client import SgoClient
 from app.providers.the_odds_api.client import TheOddsApiClient
 from app.storage.models import JobSlot, ProviderRefreshRun
 
@@ -27,6 +28,7 @@ class JobContext:
     raw_dir: Path
     settings: Optional[Settings] = None
     odds: Optional[TheOddsApiClient] = None  # only built in live mode with a key
+    sgo: Optional[SgoClient] = None  # the fallback when `odds` is absent or out of credits
 
 
 @dataclass(frozen=True)

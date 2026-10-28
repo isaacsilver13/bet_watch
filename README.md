@@ -115,6 +115,12 @@ Games that tip between those two get ESPN's close for CLV instead of a multi-boo
 October through February, with the NFL's roughly 30 credits a week, the two sports use about 400 of
 the free 500 credits a month; `PROVIDER_MIN_QUOTA_REMAINING` still stops everything at the floor.
 
+**SportsGameOdds fallback.** With `SGO_API_KEY` set (live mode), an `odds_snapshot` slot whose Odds
+API credits are at the floor takes its snapshot from SGO's free tier instead (billed per event, so a
+slot costs about one NFL week's games, not 3 credits). Its raw file lands in `data/raw/sgo/`, rows are
+stored with provider `sgo`, and it covers full-game moneyline, spread and total for DraftKings,
+FanDuel, BetMGM and ESPN BET only (no BetRivers). The Odds API stays the primary source.
+
 **Model picks.** `model_picks` (free) prices the nba repo's line-free predictions,
 `$NBA_PREDICTIONS_DIR/<date>.json` (default `../nba_prediction/outputs/predictions`), against every
 book once today's 10am NBA snapshot has finished (from 10:15 CT). EV is per unit after Illinois
