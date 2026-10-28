@@ -11,9 +11,7 @@ import {
   dayHeading,
   dayKey,
   isActionable,
-  isBestQuote,
   isStale,
-  quoteCell,
   sideLabel,
   whenZoned,
   type BoardGame,
@@ -93,30 +91,6 @@ function BestSide({
   );
 }
 
-function BookStrip({
-  entry, market, actionable, onPick,
-}: { entry: BoardGame; market: MarketId; actionable: boolean; onPick: (draft: BetDraft) => void }) {
-  const specs = MARKET_SIDES[market];
-  return (
-    <div className="book-strip" role="group" aria-label="Prices by book">
-      {entry.market.books.map((book) => (
-        <div className="book-column" key={book.book}>
-          <span className="book-name">{book.book}</span>
-          {specs.map((spec) => {
-            const cell = quoteCell(book, spec, entry.market.consensus);
-            return (
-              <QuotePrice
-                actionable={actionable} best={isBestQuote(cell, entry.market.best[spec.name])} cell={cell}
-                key={spec.name} label={sideLabel(spec, entry.game, cell.line)} onPick={onPick} spec={spec}
-              />
-            );
-          })}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function ResearchPanel({ entry }: { entry: BoardGame }) {
   const id = String(entry.game.id);
   const context = useQuery({ queryKey: ["context", id, 5], queryFn: ({ signal }) => fetchContext(id, 5, signal) });
@@ -176,8 +150,6 @@ function GameMarketRow({ entry, market, expanded, onToggle, snapshotStale }: Row
         {started && entry.market.books.length > 0 && <small className="coverage">Saved pregame prices, not current.</small>}
       </div>
 
-      <BookStrip actionable={actionable} entry={entry} market={market} onPick={setDraft} />
-
       {flags.length > 0 && (
         <ul className="game-flags" aria-label="Research flags">
           {flags.map((flag) => <li className={`flag flag-${flag.kind}`} key={flag.key}>{flag.text}</li>)}
@@ -186,7 +158,7 @@ function GameMarketRow({ entry, market, expanded, onToggle, snapshotStale }: Row
 
       <div className="game-actions">
         <button aria-expanded={open === "books"} className="text-button" onClick={() => onToggle(game.id, "books")} type="button">
-          Compare books
+          Expand all books
         </button>
         <button aria-expanded={open === "research"} className="text-button" onClick={() => onToggle(game.id, "research")} type="button">
           Research matchup

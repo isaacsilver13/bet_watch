@@ -353,9 +353,6 @@ select { min-height: 39px; border: 1px solid var(--line); border-radius: 8px; co
 .price-static { cursor: default; }
 .price-button:disabled { cursor: not-allowed; }
 
-.book-strip { display: none; grid-column: 1 / -1; grid-auto-flow: column; grid-auto-columns: minmax(120px, 1fr); gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
-.book-column { display: grid; gap: 4px; align-content: start; }
-.book-name { color: var(--muted); font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; }
 .game-flags { display: flex; flex-wrap: wrap; gap: 6px; grid-column: 1 / -1; margin: 0; padding: 0; list-style: none; }
 .flag { border: 1px solid var(--line-strong); border-radius: 999px; padding: 3px 11px; font-size: 0.78rem; color: var(--ink); }
 .flag-qb { border-color: rgba(251, 191, 36, 0.5); color: #fde68a; }
@@ -378,8 +375,7 @@ select { min-height: 39px; border: 1px solid var(--line); border-radius: 8px; co
 .brief-card small { display: block; margin-top: 8px; color: var(--muted); font-size: 0.7rem; }
 
 @media (min-width: 1280px) {
-  .game-row { grid-template-columns: 190px 200px 230px minmax(0, 1fr); }
-  .book-strip { display: grid; grid-column: auto; grid-auto-columns: minmax(118px, 1fr); border-top: 0; padding-top: 0; }
+  .game-row { grid-template-columns: 190px 200px minmax(230px, 1fr); }
   .game-flags, .game-actions { grid-column: 1 / -1; }
   .game-actions { grid-column: 1 / -1; }
 }
@@ -399,5 +395,3 @@ select { min-height: 39px; border: 1px solid var(--line); border-radius: 8px; co
   .app-nav { gap: 6px 14px; }
 }
 .price-text { white-space: nowrap; }
-.book-column .price-button { flex-wrap: wrap; gap: 2px 6px; }
-.book-column .price-tag { font-size: 0.55rem; }

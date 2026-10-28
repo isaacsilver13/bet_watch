@@ -59,7 +59,9 @@ describe("SlatePage week board", () => {
     expect(within(best).getByRole("button", { name: "Log BetRivers DEN +1.5 -105" })).toBeInTheDocument();
     expect(within(best).getByRole("button", { name: "Log DraftKings SEA -1.5 -110" })).toBeInTheDocument();
     expect(screen.getByText("3 of 4 books at SEA -1.5.")).toBeInTheDocument();
-    // BetMGM's +300 is a different number: shown in the strip, tagged, and never "Best".
+    expect(screen.queryByRole("button", { name: "Log BetMGM DEN +2.5 +300" })).not.toBeInTheDocument();
+    // BetMGM's +300 is a different number: shown once expanded, tagged, and never "Best".
+    fireEvent.click(screen.getByRole("button", { name: "Expand all books" }));
     const mgm = screen.getByRole("button", { name: "Log BetMGM DEN +2.5 +300" });
     expect(mgm).toHaveTextContent("Other number");
     expect(mgm).not.toHaveTextContent("Best");
@@ -124,7 +126,7 @@ describe("SlatePage week board", () => {
   it("opens the full book table in the row and keeps it in the URL", async () => {
     vi.mocked(fetchBoard).mockResolvedValue(board());
     renderAt("/nfl");
-    const open = await screen.findByRole("button", { name: "Compare books" });
+    const open = await screen.findByRole("button", { name: "Expand all books" });
     expect(open).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(open);
     expect(open).toHaveAttribute("aria-expanded", "true");
