@@ -84,7 +84,7 @@ line, by book, sport or market. `/ops` shows whether the scheduled jobs are actu
 
 Prices come from The Odds API and cost credits, so they are **off until you turn them on**: set
 `PROVIDER_MODE=live`, `ODDS_PROVIDER=the_odds_api` and a free `THE_ODDS_API_KEY` in `.env`. Then
-`run-due` takes a snapshot at 10am CT on Tuesday, Thursday, Saturday and Sunday and 30 minutes
+`run-due` takes a snapshot at 10am CT on Tuesday, Thursday and Sunday (plus Monday, Wednesday, Friday and Saturday from SGO only, so daily) and 30 minutes
 before each kickoff time. Each call is 3 credits and covers every game, so a week is about 30
 credits against the free 500 a month. Every paid response is written to `data/raw/` (git-ignored)
 before it is parsed, so a crash never costs a second call, and the job stops at the
@@ -195,7 +195,7 @@ reversible with `alembic downgrade base`.
 `PROVIDER_MODE=fixture` is the application default when no environment is
 provided and never makes live provider calls. Set `PROVIDER_MODE=live`
 explicitly before using `THE_ODDS_API_KEY`. The
-`PROVIDER_MIN_QUOTA_REMAINING` setting defaults to `5`; when a live provider
+`PROVIDER_MIN_QUOTA_REMAINING` setting defaults to `50`; when a live provider
 reports that remaining quota is at or below this value, the cache suppresses
 another refresh and serves the last successful snapshot when one exists.
 
