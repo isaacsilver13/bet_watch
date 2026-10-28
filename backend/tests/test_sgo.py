@@ -40,6 +40,8 @@ PAGE = {"success": True, "nextCursor": None, "data": [
             }},
             "points-all-game-ou-over": {"byBookmaker": {
                 "draftkings": _quote("-108", over_under="224.5")}},
+            "points-home-game-ou-over": {"byBookmaker": {  # a team total, not the game total
+                "draftkings": _quote("-110", over_under="26.5")}},
             "points-home-1h-sp-home": {"byBookmaker": {"fanduel": _quote("-110", spread="-1.5")}},
             "points+rebounds-STEPH_CURRY_1_NBA-game-ou-over": {"byBookmaker": {
                 "fanduel": _quote("-115", over_under="40.5")}},

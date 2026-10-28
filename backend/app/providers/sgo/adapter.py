@@ -19,7 +19,13 @@ BOOK_TITLES = {
     "thescore": "ESPN BET",
 }
 _MARKETS = {"ml": MarketType.MONEYLINE, "sp": MarketType.SPREAD, "ou": MarketType.TOTAL}
-_HEADS = ("points-home", "points-away", "points-all")
+# The oddID head each bet type may carry. `points-home|away-game-ou-*` are TEAM totals (seen live
+# 2026-10-27, 26.5 beside the game's 47.5); only `points-all` is the game total.
+_HEADS = {
+    "ml": ("points-home", "points-away"),
+    "sp": ("points-home", "points-away"),
+    "ou": ("points-all",),
+}
 
 
 def normalize_events(
@@ -80,7 +86,7 @@ def _offers(
         return []
     market_type = _MARKETS.get(bet)
     selection = {"home": home, "away": away, "over": "Over", "under": "Under"}.get(side)
-    if market_type is None or selection is None or period != "game" or head not in _HEADS:
+    if market_type is None or selection is None or period != "game" or head not in _HEADS[bet]:
         return []
     offers = []
     for book, quote in (odd.get("byBookmaker") or {}).items():
