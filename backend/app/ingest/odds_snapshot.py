@@ -1,8 +1,9 @@
-"""Take one paid Odds API snapshot: save the raw response first, then parse, store and link it."""
+"""Take one paid odds snapshot (The Odds API, else SGO): save the raw response first, then parse,
+store and link it. A saved file's provider is the directory it sits in."""
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -12,6 +13,9 @@ from app.analytics.coverage import snapshot_coverage
 from app.domain.models import Sport
 from app.identity import canonicalize_comparison
 from app.ingest.odds_raw import observed_at_from_path, read_raw, write_raw
+from app.providers.sgo.adapter import NAME as SGO_PROVIDER
+from app.providers.sgo.adapter import normalize_events as sgo_normalize
+from app.providers.sgo.client import SgoClient
 from app.providers.the_odds_api.adapter import TheOddsApiProvider
 from app.providers.the_odds_api.client import TheOddsApiClient
 from app.storage.games_repository import GamesRepository
@@ -38,6 +42,21 @@ async def fetch_snapshot(
     return path, client.quota_remaining
 
 
+async def fetch_sgo_snapshot(
+    client: SgoClient,
+    raw_dir: Path,
+    slot_key: str,
+    now: datetime,
+    sport: Sport,
+    targets: tuple[datetime, datetime],
+) -> Path:
+    """The free-tier fallback. The window is padded because SGO's start times can differ from the
+    schedule's by a few minutes; the body is on disk before anything reads it."""
+    pad = timedelta(minutes=5)
+    body = await client.fetch_events_raw(sport, targets[0] - pad, targets[1] + pad)
+    return write_raw(raw_dir, SGO_PROVIDER, slot_key, now.replace(microsecond=0), body)
+
+
 async def ingest_snapshot(
     session_factory: async_sessionmaker[AsyncSession],
     path: Path,
@@ -50,14 +69,14 @@ async def ingest_snapshot(
     `targets` is the kickoff window of the games this snapshot was for. Safe to repeat: the
     store step does nothing when the snapshot is already saved."""
     observed_at = observed_at_from_path(path)
+    provider = path.parent.parent.name  # write_raw's layout: <raw_dir>/<provider>/<date>/<file>
+    normalize = sgo_normalize if provider == SGO_PROVIDER else TheOddsApiProvider.normalize_events
     comparisons = [
         canonicalize_comparison(comparison)
-        for comparison in TheOddsApiProvider.normalize_events(
-            json.loads(read_raw(path)), sport, observed_at
-        )
+        for comparison in normalize(json.loads(read_raw(path)), sport, observed_at)
     ]
     await OddsRepository(session_factory).record_snapshot(
-        PROVIDER, sport, comparisons, observed_at, quota_remaining
+        provider, sport, comparisons, observed_at, quota_remaining
     )
     games = GamesRepository(session_factory)
     await games.link_events(sport.value)  # before scoring, so a linked game can be matched

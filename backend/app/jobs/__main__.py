@@ -22,6 +22,7 @@ from app.jobs.nfl import JOBS as NFL_JOBS
 from app.jobs.odds import OddsSnapshotJob
 from app.jobs.paper_ledger import PaperLedgerJob, PaperSettlementJob
 from app.jobs.runner import JobContext, run_due, run_once
+from app.providers.sgo.client import SgoClient
 from app.providers.the_odds_api.client import TheOddsApiClient
 from app.storage.database import create_engine, create_session_factory
 
@@ -50,7 +51,8 @@ async def job_context(settings: Settings) -> AsyncIterator[JobContext]:
         ) as http:
             odds = TheOddsApiClient.from_settings(settings)  # None unless live with a key
             yield JobContext(
-                create_session_factory(engine), http, Path(settings.raw_data_dir), settings, odds
+                create_session_factory(engine), http, Path(settings.raw_data_dir), settings, odds,
+                SgoClient.from_settings(settings),
             )
     finally:
         await engine.dispose()

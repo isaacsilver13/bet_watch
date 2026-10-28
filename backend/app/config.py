@@ -110,6 +110,7 @@ class Settings:
     owner_password_hash: Optional[str] = None
     owner_app_origin: Optional[str] = None
     internal_jobs_secret: Optional[str] = None  # guards /internal/* (cron-job.org, nba Actions)
+    sgo_api_key: Optional[str] = None  # SportsGameOdds, the odds_snapshot fallback
 
 
 def load_settings() -> Settings:
@@ -163,4 +164,5 @@ def load_settings() -> Settings:
         owner_password_hash=_setting("OWNER_PASSWORD_HASH", "") or None,
         owner_app_origin=_setting("OWNER_APP_ORIGIN", "").strip().rstrip("/") or None,
         internal_jobs_secret=_setting("INTERNAL_JOBS_SECRET", "") or None,
+        sgo_api_key=_setting("SGO_API_KEY", "") or None,
     )

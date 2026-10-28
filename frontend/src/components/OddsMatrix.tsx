@@ -43,7 +43,8 @@ function OfferCell({ offer, offers }: { offer: Offer | undefined; offers: Offer[
       {impliedProbability(offer) && <small>{impliedProbability(offer)} implied</small>}
     </>
   );
-  return offer.deep_link ? (
+  // A feed-supplied link only becomes an href when it is http(s): never javascript: or data:.
+  return offer.deep_link && /^https?:\/\//i.test(offer.deep_link) ? (
     <a className={className} href={offer.deep_link} rel="noreferrer" target="_blank">
       {content}
     </a>
