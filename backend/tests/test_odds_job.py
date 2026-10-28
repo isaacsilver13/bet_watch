@@ -83,10 +83,11 @@ def test_daily_slots_follow_the_weekly_rhythm_in_central_time() -> None:
     assert keys(16, 9) == ["odds_snapshot:nfl:2026-10-15:thu", "odds_snapshot:nfl:2026-10-16:fri"]
     assert keys(17) == ["odds_snapshot:nfl:2026-10-16:fri", "odds_snapshot:nfl:2026-10-17:sat"]
     assert keys(18) == ["odds_snapshot:nfl:2026-10-17:sat", "odds_snapshot:nfl:2026-10-18:sun"]
-    assert [s.sgo_only for s in daily_odds_slots(datetime(2026, 10, 17, 10, 15, tzinfo=CENTRAL))] == [
-        True, True]
-    assert [s.sgo_only for s in daily_odds_slots(datetime(2026, 10, 13, 10, 15, tzinfo=CENTRAL))] == [
-        True, False]  # Monday's, then Tuesday's opening lines
+    def sgo_only(day):
+        return [s.sgo_only for s in daily_odds_slots(datetime(2026, 10, day, 10, 15, tzinfo=CENTRAL))]
+
+    assert sgo_only(17) == [True, True]  # Friday's and Saturday's
+    assert sgo_only(13) == [True, False]  # Monday's, then Tuesday's opening lines
     sunday = daily_odds_slots(datetime(2026, 10, 18, 10, 15, tzinfo=CENTRAL))[-1]
     assert sunday.window_end - sunday.window_start == timedelta(minutes=90)
     # Judged on its own week's games only: Sunday's snapshot ends at Tuesday 00:00, because the
@@ -369,7 +370,8 @@ def test_a_wednesday_snapshot_is_bought_from_sgo_even_with_odds_api_credits(
 def test_the_sgo_only_mornings_are_not_planned_without_an_sgo_key(tmp_path, monkeypatch) -> None:
     async def scenario() -> None:
         s = await _setup(tmp_path, monkeypatch, now=WED)
-        assert WED_SLOT not in await run_due([OddsSnapshotJob()], s.ctx, WED)  # Tuesday's leftover only
+        results = await run_due([OddsSnapshotJob()], s.ctx, WED)
+        assert WED_SLOT not in results  # only Tuesday's leftover is closed out
         assert s.calls == []
 
     asyncio.run(scenario())
