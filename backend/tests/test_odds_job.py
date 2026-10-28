@@ -84,7 +84,8 @@ def test_daily_slots_follow_the_weekly_rhythm_in_central_time() -> None:
     assert keys(17) == ["odds_snapshot:nfl:2026-10-16:fri", "odds_snapshot:nfl:2026-10-17:sat"]
     assert keys(18) == ["odds_snapshot:nfl:2026-10-17:sat", "odds_snapshot:nfl:2026-10-18:sun"]
     def sgo_only(day):
-        return [s.sgo_only for s in daily_odds_slots(datetime(2026, 10, day, 10, 15, tzinfo=CENTRAL))]
+        now = datetime(2026, 10, day, 10, 15, tzinfo=CENTRAL)
+        return [s.sgo_only for s in daily_odds_slots(now)]
 
     assert sgo_only(17) == [True, True]  # Friday's and Saturday's
     assert sgo_only(13) == [True, False]  # Monday's, then Tuesday's opening lines
