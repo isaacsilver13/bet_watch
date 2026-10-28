@@ -1,8 +1,9 @@
 """The paid odds snapshot jobs, each snapshot saved raw before it is parsed.
 
 One bulk call returns every game of a sport for 3 credits, so slots are per moment, not per game.
-NFL: Tuesday's opening lines, a morning snapshot on Thursday, Saturday and Sunday, and one shortly
-before each distinct kickoff time (that last one is the closing-line reference for CLV).
+NFL: Tuesday's opening lines, a morning snapshot on Thursday and Sunday, and one shortly
+before each distinct kickoff time (that last one is the closing-line reference for CLV). Saturday
+has no morning snapshot: Thursday's and Sunday's cover it, and each snapshot re-buys the week.
 NBA: a 10am snapshot every day, and one shortly before the first tip and one before the last tip
 of each night (games in between use ESPN's close, so the sport stays inside the free credits).
 """
@@ -36,7 +37,6 @@ NBA_CLUSTER_GAP = timedelta(minutes=90)  # tips closer than this share one pre-t
 DAILY = {
     1: ("open", timedelta(hours=12)),
     3: ("thu", timedelta(hours=2)),
-    5: ("sat", timedelta(hours=2)),
     6: ("sun", timedelta(minutes=90)),
 }
 

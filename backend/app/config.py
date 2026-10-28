@@ -133,7 +133,7 @@ def load_settings() -> Settings:
         persistence_enabled=persistence_value == "true",
         observation_retention_days=int(_setting("OBSERVATION_RETENTION_DAYS", "90")),
         cache_ttl_seconds=int(_setting("CACHE_TTL_SECONDS", "86400")),
-        provider_min_quota_remaining=int(_setting("PROVIDER_MIN_QUOTA_REMAINING", "5")),
+        provider_min_quota_remaining=int(_setting("PROVIDER_MIN_QUOTA_REMAINING", "50")),
         provider_timeout_seconds=float(_setting("PROVIDER_TIMEOUT_SECONDS", "15")),
         provider_max_retries=int(_setting("PROVIDER_MAX_RETRIES", "2")),
         provider_backoff_seconds=float(_setting("PROVIDER_BACKOFF_SECONDS", "0.5")),

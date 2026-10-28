@@ -79,7 +79,8 @@ def test_daily_slots_follow_the_weekly_rhythm_in_central_time() -> None:
     assert keys(12) == ["odds_snapshot:nfl:2026-10-11:sun"]  # Monday closes out Sunday
     assert keys(15) == ["odds_snapshot:nfl:2026-10-15:thu"]
     assert keys(16, 9) == ["odds_snapshot:nfl:2026-10-15:thu"]  # Friday still closes out Thursday
-    assert keys(18) == ["odds_snapshot:nfl:2026-10-17:sat", "odds_snapshot:nfl:2026-10-18:sun"]
+    assert keys(17) == []  # Saturday has no morning snapshot; the pre-kick slots cover its games
+    assert keys(18) == ["odds_snapshot:nfl:2026-10-18:sun"]
     sunday = daily_odds_slots(datetime(2026, 10, 18, 10, 15, tzinfo=CENTRAL))[-1]
     assert sunday.window_end - sunday.window_start == timedelta(minutes=90)
     # Judged on its own week's games only: Sunday's snapshot ends at Tuesday 00:00, because the

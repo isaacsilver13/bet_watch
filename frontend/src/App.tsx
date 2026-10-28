@@ -253,7 +253,13 @@ function App() {
   const kalshiDetails = predictionData?.provider_details.kalshi;
   const kalshiStatus = predictionData?.provider_status.kalshi ?? (predictionLoading ? "loading" : "waiting");
 
+  // Props are one provider call per game (about 10 credits each) on top of the 3-credit odds call.
+  function confirmPropsSpend(games: number) {
+    return !needsPlayerProps || window.confirm(`Player props cost about 10 credits per game plus 3 for the odds: roughly ${3 + 10 * games} credits for ${games} ${games === 1 ? "game" : "games"}. Refresh anyway?`);
+  }
+
   async function refreshAll() {
+    if (!confirmPropsSpend(data?.events.length ?? 0)) return;
     setRefreshingKey("all");
     try {
       const result = await fetchOdds(sport, { forceRefresh: true, includeProps: needsPlayerProps });
@@ -267,6 +273,7 @@ function App() {
   }
 
   async function refreshEvent(eventId: string) {
+    if (!confirmPropsSpend(1)) return;
     setRefreshingKey(eventId);
     try {
       const result = await fetchOdds(sport, { eventId, forceRefresh: true, includeProps: needsPlayerProps });
