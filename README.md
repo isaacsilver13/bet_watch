@@ -84,7 +84,7 @@ line, by book, sport or market. `/ops` shows whether the scheduled jobs are actu
 
 Prices come from The Odds API and cost credits, so they are **off until you turn them on**: set
 `PROVIDER_MODE=live`, `ODDS_PROVIDER=the_odds_api` and a free `THE_ODDS_API_KEY` in `.env`. Then
-`run-due` takes a snapshot at 10am CT on Tuesday, Thursday and Sunday and 30 minutes
+`run-due` takes a snapshot at 10am CT on Tuesday, Thursday and Sunday (plus Monday, Wednesday, Friday and Saturday from SGO only, so daily) and 30 minutes
 before each kickoff time. Each call is 3 credits and covers every game, so a week is about 30
 credits against the free 500 a month. Every paid response is written to `data/raw/` (git-ignored)
 before it is parsed, so a crash never costs a second call, and the job stops at the

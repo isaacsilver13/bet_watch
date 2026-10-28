@@ -2,8 +2,10 @@
 
 One bulk call returns every game of a sport for 3 credits, so slots are per moment, not per game.
 NFL: Tuesday's opening lines, a morning snapshot on Thursday and Sunday, and one shortly
-before each distinct kickoff time (that last one is the closing-line reference for CLV). Saturday
-has no morning snapshot: Thursday's and Sunday's cover it, and each snapshot re-buys the week.
+before each distinct kickoff time (that last one is the closing-line reference for CLV). Monday,
+Wednesday, Friday and Saturday get a morning snapshot too, from SGO only, so there is one every day:
+it is billed per event (about a week's games each) and the 500 Odds API credits cannot carry a daily
+NFL snapshot as well. A day with no games left to score is "empty" and buys nothing.
 NBA: a 10am snapshot every day, and one shortly before the first tip and one before the last tip
 of each night (games in between use ESPN's close, so the sport stays inside the free credits).
 """
@@ -39,6 +41,12 @@ DAILY = {
     3: ("thu", timedelta(hours=2)),
     6: ("sun", timedelta(minutes=90)),
 }
+SGO_DAILY = {  # the other mornings, never bought from the Odds API
+    0: ("mon", timedelta(hours=2)),
+    2: ("wed", timedelta(hours=2)),
+    4: ("fri", timedelta(hours=2)),
+    5: ("sat", timedelta(hours=2)),
+}
 
 
 def week_end(day: date) -> datetime:
@@ -52,6 +60,7 @@ def week_end(day: date) -> datetime:
 class OddsSlot(Slot):
     targets: tuple[datetime, datetime] = (datetime.min, datetime.min)  # kickoff window to score
     retry_after: timedelta = DAILY_RETRY
+    sgo_only: bool = False  # never spend Odds API credits on this slot
 
 
 def _now() -> datetime:
@@ -63,9 +72,9 @@ def daily_odds_slots(now: datetime, name: str = NAME) -> list[OddsSlot]:
     today = now.astimezone(CENTRAL).date()
     slots = []
     for day in (today - timedelta(days=1), today):
-        if day.weekday() not in DAILY:
+        if day.weekday() not in DAILY and day.weekday() not in SGO_DAILY:
             continue
-        label, length = DAILY[day.weekday()]
+        label, length = (DAILY | SGO_DAILY)[day.weekday()]
         start = datetime.combine(day, time(DAILY_START_HOUR), CENTRAL)
         slots.append(
             OddsSlot(
@@ -74,6 +83,7 @@ def daily_odds_slots(now: datetime, name: str = NAME) -> list[OddsSlot]:
                 start + length,
                 targets=(start, week_end(day)),
                 retry_after=DAILY_RETRY,
+                sgo_only=day.weekday() in SGO_DAILY,
             )
         )
     return slots
@@ -166,6 +176,8 @@ class OddsSnapshotJob:
             planned = [*nba_open_slots(now, self.name), *nba_pre_tip_slots(tips, self.name)]
         else:
             planned = [*daily_odds_slots(now, self.name), *pre_kick_slots(tips, self.name)]
+        if ctx.sgo is None:  # the SGO-only mornings have nothing to buy from
+            planned = [slot for slot in planned if not slot.sgo_only]
         async with ctx.session_factory() as session:
             rows = (
                 await session.scalars(select(JobSlot).where(JobSlot.job == self.name))
@@ -211,8 +223,8 @@ class OddsSnapshotJob:
             ):
                 return "empty"
             floor = ctx.settings.provider_min_quota_remaining
-            use_odds_api = ctx.odds is not None
-            if ctx.odds is not None:
+            use_odds_api = ctx.odds is not None and not getattr(slot, "sgo_only", False)
+            if use_odds_api:
                 try:
                     remaining = await ctx.odds.fetch_quota_remaining()
                 except OddsProviderError as error:

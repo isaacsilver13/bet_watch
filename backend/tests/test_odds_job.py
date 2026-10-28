@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -13,6 +14,7 @@ from app.jobs.odds import OddsSnapshotJob, daily_odds_slots, pre_kick_slots
 from app.jobs.runner import JobContext, get_slot_info, run_due, run_once, update_slot
 from app.jobs.slots import CENTRAL
 from app.providers.errors import ProviderPayloadError
+from app.providers.sgo.client import SgoClient
 from app.providers.the_odds_api.client import TheOddsApiClient
 from app.storage.games_repository import GamesRepository
 from app.storage.models import Game, JobSlot, OfferObservation, ProviderRefreshRun
@@ -74,13 +76,17 @@ def test_daily_slots_follow_the_weekly_rhythm_in_central_time() -> None:
         now = datetime(2026, 10, day, hour, minute, tzinfo=CENTRAL)
         return [s.key for s in daily_odds_slots(now)]
 
-    assert keys(13) == ["odds_snapshot:nfl:2026-10-13:open"]  # Tuesday: the opening lines
-    assert keys(14) == ["odds_snapshot:nfl:2026-10-13:open"]  # Wednesday closes out Tuesday
-    assert keys(12) == ["odds_snapshot:nfl:2026-10-11:sun"]  # Monday closes out Sunday
-    assert keys(15) == ["odds_snapshot:nfl:2026-10-15:thu"]
-    assert keys(16, 9) == ["odds_snapshot:nfl:2026-10-15:thu"]  # Friday still closes out Thursday
-    assert keys(17) == []  # Saturday has no morning snapshot; the pre-kick slots cover its games
-    assert keys(18) == ["odds_snapshot:nfl:2026-10-18:sun"]
+    assert keys(13) == ["odds_snapshot:nfl:2026-10-12:mon", "odds_snapshot:nfl:2026-10-13:open"]
+    assert keys(14) == ["odds_snapshot:nfl:2026-10-13:open", "odds_snapshot:nfl:2026-10-14:wed"]
+    assert keys(12) == ["odds_snapshot:nfl:2026-10-11:sun", "odds_snapshot:nfl:2026-10-12:mon"]
+    assert keys(15) == ["odds_snapshot:nfl:2026-10-14:wed", "odds_snapshot:nfl:2026-10-15:thu"]
+    assert keys(16, 9) == ["odds_snapshot:nfl:2026-10-15:thu", "odds_snapshot:nfl:2026-10-16:fri"]
+    assert keys(17) == ["odds_snapshot:nfl:2026-10-16:fri", "odds_snapshot:nfl:2026-10-17:sat"]
+    assert keys(18) == ["odds_snapshot:nfl:2026-10-17:sat", "odds_snapshot:nfl:2026-10-18:sun"]
+    assert [s.sgo_only for s in daily_odds_slots(datetime(2026, 10, 17, 10, 15, tzinfo=CENTRAL))] == [
+        True, True]
+    assert [s.sgo_only for s in daily_odds_slots(datetime(2026, 10, 13, 10, 15, tzinfo=CENTRAL))] == [
+        True, False]  # Monday's, then Tuesday's opening lines
     sunday = daily_odds_slots(datetime(2026, 10, 18, 10, 15, tzinfo=CENTRAL))[-1]
     assert sunday.window_end - sunday.window_start == timedelta(minutes=90)
     # Judged on its own week's games only: Sunday's snapshot ends at Tuesday 00:00, because the
@@ -328,3 +334,42 @@ def test_the_job_is_registered_with_the_runner() -> None:
     from app.jobs.__main__ import JOBS
 
     assert any(isinstance(job, OddsSnapshotJob) for job in JOBS)
+
+
+WED = datetime(2026, 10, 14, 10, 30, tzinfo=CENTRAL).astimezone(timezone.utc)
+WED_SLOT = "odds_snapshot:nfl:2026-10-14:wed"
+
+
+def _sgo(calls: list) -> SgoClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/account/usage"):
+            return httpx.Response(200, json={"data": {"rateLimits": {"per-month": {
+                "max-entities": 2500, "current-entities": 100}}}})
+        calls.append(request.url)
+        return httpx.Response(200, json={"success": True, "nextCursor": None, "data": []})
+
+    return SgoClient("sgo-key", transport=httpx.MockTransport(handler))
+
+
+def test_a_wednesday_snapshot_is_bought_from_sgo_even_with_odds_api_credits(
+    tmp_path, monkeypatch
+) -> None:
+    async def scenario() -> None:
+        s = await _setup(tmp_path, monkeypatch, now=WED)  # Odds API healthy: 450 credits
+        sgo_calls: list = []
+        ctx = dataclasses.replace(s.ctx, sgo=_sgo(sgo_calls))
+        results = await run_due([OddsSnapshotJob()], ctx, WED)
+        assert WED_SLOT in results
+        assert s.calls == []  # no Odds API credits spent
+        assert len(sgo_calls) == 1 and sgo_calls[0].params["leagueID"] == "NFL"
+
+    asyncio.run(scenario())
+
+
+def test_the_sgo_only_mornings_are_not_planned_without_an_sgo_key(tmp_path, monkeypatch) -> None:
+    async def scenario() -> None:
+        s = await _setup(tmp_path, monkeypatch, now=WED)
+        assert WED_SLOT not in await run_due([OddsSnapshotJob()], s.ctx, WED)  # Tuesday's leftover only
+        assert s.calls == []
+
+    asyncio.run(scenario())
