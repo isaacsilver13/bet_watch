@@ -108,6 +108,17 @@ async def update_slot(
         row.updated_at = at or datetime.now(timezone.utc)
 
 
+async def _slot_states(ctx: JobContext, job: str, keys: list[str]) -> dict[str, str]:
+    """One read for a job's slots, so finished ones cost no round trip each (Neon is remote)."""
+    async with ctx.session_factory() as session:
+        rows = await session.execute(
+            select(JobSlot.slot_key, JobSlot.state).where(
+                JobSlot.job == job, JobSlot.slot_key.in_(keys)
+            )
+        )
+    return dict(rows.all())
+
+
 async def _planned_slots(job: Job, ctx: JobContext, now: datetime) -> list[Slot]:
     planner = getattr(job, "plan_slots", None)
     return await planner(ctx, now) if planner else job.slots(now)
@@ -120,8 +131,11 @@ class RunResults(dict[str, str]):
 async def run_due(jobs: Sequence[Job], ctx: JobContext, now: datetime) -> RunResults:
     results = RunResults()
     for job in jobs:
-        for slot in await _planned_slots(job, ctx, now):
-            if now < slot.window_start:
+        slots = await _planned_slots(job, ctx, now)
+        started = [s for s in slots if now >= s.window_start]
+        states = await _slot_states(ctx, job.name, [s.key for s in started])
+        for slot in started:
+            if states.get(slot.key) in TERMINAL_STATES:  # terminal never changes; skip the re-read
                 continue
             info = await get_slot_info(ctx, job.name, slot.key)
             state, attempts = info.state, info.attempts
