@@ -13,7 +13,7 @@ from app.jobs.runner import (
 )
 from app.jobs.slots import CENTRAL, Slot, daily_slot, hourly_slots
 from app.storage.models import JobSlot, ProviderRefreshRun
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 from tests.matchup_helpers import new_session_factory
 
@@ -79,6 +79,29 @@ def test_done_slot_runs_once(tmp_path) -> None:
         assert await run_due([job], ctx, NOW) == {"fake:now": "done"}
         assert await run_due([job], ctx, NOW) == {}
         assert job.calls == 1
+
+    asyncio.run(scenario())
+
+
+def test_finished_slots_cost_one_read_per_job(tmp_path) -> None:
+    """A tick walks every started slot, finished ones included; over Neon each read is a round
+    trip, and 100+ of them pushed the hourly tick past cron-job.org's 30 s timeout."""
+
+    async def scenario() -> None:
+        ctx = await _ctx(tmp_path)
+        slots = [
+            Slot(f"fake:{h:02d}", datetime(2026, 10, 11, h, tzinfo=CENTRAL),
+                 datetime(2026, 10, 11, h + 1, tzinfo=CENTRAL))
+            for h in range(8, 11)
+        ]
+        for slot in slots:
+            await update_slot(ctx, "fake", slot.key, state="done", attempts=1)
+        reads: list[str] = []
+        engine = ctx.session_factory.kw["bind"].sync_engine
+        event.listen(engine, "before_cursor_execute", lambda c, cur, stmt, *a: reads.append(stmt))
+        assert await run_due([FakeJob([], slots=slots)], ctx, NOW) == {}
+        slot_reads = [stmt for stmt in reads if "FROM job_slots" in stmt]
+        assert len(slot_reads) == 1
 
     asyncio.run(scenario())
 
