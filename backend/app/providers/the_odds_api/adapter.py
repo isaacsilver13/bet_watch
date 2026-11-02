@@ -119,7 +119,8 @@ class TheOddsApiProvider:
                 updated_at = market.get("last_update")
                 for index, outcome in enumerate(market.get("outcomes", [])):
                     price = outcome.get("price")
-                    if not isinstance(price, (int, float)):
+                    # Offer's bound, as in the SGO adapter: one -50000 quote can't fail a snapshot.
+                    if not isinstance(price, (int, float)) or not 100 <= abs(price) <= 10000:
                         continue
                     price_american = int(price)
                     offers.append(
