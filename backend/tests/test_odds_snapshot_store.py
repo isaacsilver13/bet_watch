@@ -82,6 +82,15 @@ def test_events_are_stamped_with_the_snapshot_time_not_the_parse_time() -> None:
     assert len(comparisons[0].offers) == 5 * (2 + 2 + 2)  # five books, three markets, two sides
 
 
+def test_an_out_of_range_price_is_skipped_not_fatal() -> None:
+    payload = json.loads(BODY)
+    outcomes = payload[0]["bookmakers"][0]["markets"][0]["outcomes"]
+    outcomes[0]["price"] = -50000  # a heavy favorite once failed the whole snapshot
+    outcomes[1]["price"] = 0
+    comparisons = TheOddsApiProvider.normalize_events(payload, Sport.NFL, NOW)
+    assert len(comparisons[0].offers) == 5 * 6 - 2
+
+
 def test_raw_files_round_trip_and_carry_their_snapshot_time(tmp_path) -> None:
     path = write_raw(tmp_path, "the_odds_api", "odds_snapshot:nfl:2026-10-14:daily", NOW, BODY)
     assert path.parent == tmp_path / "the_odds_api" / "2026-10-14"
