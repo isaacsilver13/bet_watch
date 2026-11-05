@@ -6,6 +6,8 @@ from app.ingest.espn import parse_injuries, parse_scoreboard
 from app.ingest.seed import seed_teams
 from app.jobs.__main__ import JOBS
 from app.jobs.context import (
+    HalfStatsHistoryJob,
+    HalfStatsJob,
     InjuriesJob,
     TeamStatsHistoryJob,
     TeamStatsJob,
@@ -15,10 +17,11 @@ from app.jobs.context import (
 from app.jobs.runner import JobContext
 from app.jobs.slots import CENTRAL, Slot, hourly_slots
 from app.storage.games_repository import GamesRepository
-from app.storage.models import Injury, TeamGameStat, Weather
+from app.storage.models import GameHalfStat, Injury, TeamGameStat, Weather
 from sqlalchemy import func, select
 
 from tests.matchup_helpers import load_json, new_session_factory
+from tests.pbp_helpers import csv_text, den_sea_week6
 
 NOW = datetime(2026, 10, 12, 12, tzinfo=timezone.utc)
 SLOT = Slot("test", NOW, NOW)
@@ -39,6 +42,8 @@ def _transport(calls, injuries=None):
         path = request.url.path
         if path.endswith("stats_team_week_2026.csv"):
             return httpx.Response(200, text=_stats_csv())
+        if path.endswith("play_by_play_2026.csv"):
+            return httpx.Response(200, text=csv_text(den_sea_week6()))
         if path.endswith("/injuries"):
             return httpx.Response(200, json=injuries or load_json("espn/injuries_league.json"))
         if "open-meteo" in request.url.host:
@@ -103,6 +108,54 @@ def test_history_job_walks_every_season_from_2015(tmp_path, monkeypatch) -> None
         assert await _count(ctx, TeamGameStat) == 2
 
     asyncio.run(scenario())
+
+
+def test_half_stats_job_streams_the_file_to_disk_and_saves_both_teams(
+    tmp_path, monkeypatch
+) -> None:
+    async def scenario() -> None:
+        ctx = await _ctx(tmp_path, [], monkeypatch)
+        assert await HalfStatsJob().run(ctx, SLOT) == "done"
+        assert await _count(ctx, GameHalfStat) == 2
+        raw = tmp_path / "raw" / "nflverse" / "play_by_play_2026.csv"
+        assert raw.read_text(encoding="utf-8").startswith("game_id,")
+        async with ctx.session_factory() as session:
+            rows = (await session.scalars(select(GameHalfStat))).all()
+        assert sorted((r.points_for_1h, r.points_against_1h) for r in rows) == [(3, 7), (7, 3)]
+
+    asyncio.run(scenario())
+
+
+def test_half_stats_job_is_empty_when_the_new_season_file_is_not_out_yet(
+    tmp_path, monkeypatch
+) -> None:
+    async def scenario() -> None:
+        later = datetime(2027, 6, 1, tzinfo=timezone.utc)  # the 2027 file does not exist: 404
+        ctx = await _ctx(tmp_path, [], monkeypatch, now=later)
+        assert await HalfStatsJob().run(ctx, SLOT) == "empty"
+        assert await _count(ctx, GameHalfStat) == 0
+
+    asyncio.run(scenario())
+
+
+def test_half_stats_history_job_walks_every_season_from_2015(tmp_path, monkeypatch) -> None:
+    async def scenario() -> None:
+        calls = []
+        ctx = await _ctx(tmp_path, calls, monkeypatch)
+        assert await HalfStatsHistoryJob().run(ctx, SLOT) == "done"
+        files = [str(url).rsplit("/", 1)[-1] for url in calls]
+        assert files[0] == "play_by_play_2015.csv" and files[-1] == "play_by_play_2026.csv"
+        assert len(files) == 12 and await _count(ctx, GameHalfStat) == 2
+
+    asyncio.run(scenario())
+
+
+def test_half_stats_run_daily_and_the_history_job_only_by_hand() -> None:
+    afternoon = datetime(2026, 10, 12, 20, tzinfo=timezone.utc)  # the daily slot opens 08:00 CT
+    assert HalfStatsJob().slots(NOW) == []  # 07:00 CT: not open yet, like the team stats job
+    assert len(HalfStatsJob().slots(afternoon)) == 1
+    assert HalfStatsHistoryJob().slots(afternoon) == []
+    assert {"half_stats", "half_stats_history"} <= {job.name for job in JOBS}
 
 
 def test_injuries_job_stores_one_snapshot_and_skips_an_empty_league(tmp_path, monkeypatch) -> None:

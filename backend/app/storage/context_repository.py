@@ -12,12 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.analytics.injuries import name_key
 from app.identity import normalize_name
 from app.ingest.nba_stats import GameLogRecord, PlayerStatRecord
+from app.ingest.nflverse_pbp import HalfRecord
 from app.ingest.nflverse_stats import TeamStatRecord
 from app.ingest.open_meteo import WeatherRecord
 from app.ingest.records import InjuryRecord, NamedInjury
 from app.storage.games_repository import alias_map, aware
 from app.storage.models import (
     Game,
+    GameHalfStat,
     Injury,
     PlayerSeasonStat,
     Team,
@@ -123,6 +125,41 @@ async def merged_injuries(
     return by_team, aware(max(observed for _, observed in newest))
 
 
+@dataclass(frozen=True)
+class GameIndex:
+    """nflverse's (season, week, team pair) -> our game id; its postseason weeks differ from
+    ESPN's, so postseason games are matched on the pair alone."""
+
+    regular: dict[tuple, int]
+    postseason: dict[tuple, int]
+
+    def find(
+        self, season: int, season_type: str, week: int, team_id: int, opponent_id: int
+    ) -> Optional[int]:
+        pair = frozenset((team_id, opponent_id))
+        if season_type == "REG":
+            return self.regular.get((season, week, pair))
+        return self.postseason.get((season, pair))
+
+
+async def game_index(session: AsyncSession, sport: str, seasons: set[int]) -> GameIndex:
+    regular: dict[tuple, int] = {}
+    postseason: dict[tuple, int] = {}
+    game_rows = await session.execute(
+        select(
+            Game.id, Game.season, Game.season_type, Game.week,
+            Game.home_team_id, Game.away_team_id,
+        ).where(Game.sport == sport, Game.season.in_(seasons))
+    )
+    for game_id, season, kind, week, home_id, away_id in game_rows.all():
+        pair = frozenset((home_id, away_id))
+        if kind == "REG":
+            regular[(season, week, pair)] = game_id
+        elif kind == "POST":
+            postseason[(season, pair)] = game_id
+    return GameIndex(regular, postseason)
+
+
 class ContextRepository:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self.session_factory = session_factory
@@ -134,20 +171,7 @@ class ContextRepository:
         seasons = {record.season for record in records}
         async with self.session_factory() as session, session.begin():
             aliases = await alias_map(session, sport)
-            regular: dict[tuple, int] = {}
-            postseason: dict[tuple, int] = {}
-            game_rows = await session.execute(
-                select(
-                    Game.id, Game.season, Game.season_type, Game.week,
-                    Game.home_team_id, Game.away_team_id,
-                ).where(Game.sport == sport, Game.season.in_(seasons))
-            )
-            for game_id, season, kind, week, home_id, away_id in game_rows.all():
-                pair = frozenset((home_id, away_id))
-                if kind == "REG":
-                    regular[(season, week, pair)] = game_id
-                elif kind == "POST":
-                    postseason[(season, pair)] = game_id  # nflverse postseason weeks differ
+            index = await game_index(session, sport, seasons)
             existing = {
                 (row.game_id, row.team_id): row
                 for row in (
@@ -163,11 +187,8 @@ class ContextRepository:
                 opponent_id = aliases.get(normalize_name(record.opponent))
                 game_id = None
                 if team_id is not None and opponent_id is not None:
-                    pair = frozenset((team_id, opponent_id))
-                    game_id = (
-                        regular.get((record.season, record.week, pair))
-                        if record.season_type == "REG"
-                        else postseason.get((record.season, pair))
+                    game_id = index.find(
+                        record.season, record.season_type, record.week, team_id, opponent_id
                     )
                 if game_id is None:
                     label = f"{record.season} {record.season_type} wk{record.week}"
@@ -178,6 +199,50 @@ class ContextRepository:
                     row = TeamGameStat(game_id=game_id, team_id=team_id)
                     session.add(row)
                     existing[(game_id, team_id)] = row
+                row.stats = dict(record.stats)
+                row.fetched_at = fetched_at
+                result.saved += 1
+        return result
+
+    async def save_half_stats(
+        self, sport: str, records: Sequence[HalfRecord], fetched_at: datetime
+    ) -> StatsResult:
+        """Upsert first-half rows. A record with no game row yet is reported, not stored."""
+        result = StatsResult()
+        seasons = {record.season for record in records}
+        async with self.session_factory() as session, session.begin():
+            aliases = await alias_map(session, sport)
+            index = await game_index(session, sport, seasons)
+            existing = {
+                (row.game_id, row.team_id): row
+                for row in (
+                    await session.scalars(
+                        select(GameHalfStat)
+                        .join(Game, Game.id == GameHalfStat.game_id)
+                        .where(Game.sport == sport, Game.season.in_(seasons))
+                    )
+                ).all()
+            }
+            for record in records:
+                team_id = aliases.get(normalize_name(record.team))
+                opponent_id = aliases.get(normalize_name(record.opponent))
+                game_id = None
+                if team_id is not None and opponent_id is not None:
+                    game_id = index.find(
+                        record.season, record.season_type, record.week, team_id, opponent_id
+                    )
+                if game_id is None:
+                    label = f"{record.season} {record.season_type} wk{record.week}"
+                    result.unmatched.append(f"{label} {record.team}-{record.opponent}")
+                    continue
+                row = existing.get((game_id, team_id))
+                if row is None:
+                    row = GameHalfStat(game_id=game_id, team_id=team_id)
+                    session.add(row)
+                    existing[(game_id, team_id)] = row
+                row.points_for_1h = record.points_for_1h
+                row.points_against_1h = record.points_against_1h
+                row.scored_first = record.scored_first
                 row.stats = dict(record.stats)
                 row.fetched_at = fetched_at
                 result.saved += 1

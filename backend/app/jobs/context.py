@@ -6,6 +6,7 @@ from typing import Optional
 
 from app.ingest.espn import fetch_injuries, parse_injuries
 from app.ingest.nflverse_injuries import INJURIES_URL, parse_injuries_csv
+from app.ingest.nflverse_pbp import PBP_URL, HalfRecord, parse_pbp_halves
 from app.ingest.nflverse_stats import TEAM_STATS_URL, TeamStatRecord, parse_team_stats_csv
 from app.ingest.open_meteo import fetch_forecast, parse_forecast
 from app.jobs.runner import JobContext
@@ -47,6 +48,60 @@ async def _save_stats(ctx: JobContext, season: int) -> int:
     if result.unmatched:
         logger.warning("team_stats %s: %s rows had no game yet", season, len(result.unmatched))
     return result.saved
+
+
+async def _half_records(ctx: JobContext, season: int) -> Optional[list[HalfRecord]]:
+    """The season's play-by-play is tens of MB: stream it to the raw dir (latest copy only) and
+    parse it from disk, so the 512 MB Fly machine never holds it in memory."""
+    raw = ctx.raw_dir / "nflverse" / f"play_by_play_{season}.csv"
+    raw.parent.mkdir(parents=True, exist_ok=True)
+    async with ctx.http.stream("GET", PBP_URL.format(season=season)) as response:
+        if response.status_code == 404:
+            return None  # the season's file is not published yet
+        response.raise_for_status()
+        with raw.open("wb") as out:
+            async for chunk in response.aiter_bytes():
+                out.write(chunk)
+    with raw.open(encoding="utf-8", newline="") as handle:
+        return parse_pbp_halves(handle)
+
+
+async def _save_halves(ctx: JobContext, season: int) -> int:
+    records = await _half_records(ctx, season)
+    if not records:
+        return 0
+    result = await ContextRepository(ctx.session_factory).save_half_stats(NFL, records, _now())
+    if result.unmatched:
+        logger.warning("half_stats %s: %s rows had no game yet", season, len(result.unmatched))
+    return result.saved
+
+
+class HalfStatsJob:
+    """First-half scores and offense from nflverse play-by-play. Daily like the team stats: the
+    file is republished after each game window, and a missed day only leaves it a day stale."""
+
+    name = "half_stats"
+    max_attempts = 3
+
+    def slots(self, now: datetime) -> list[Slot]:
+        return daily_slot(self.name, now)
+
+    async def run(self, ctx: JobContext, slot: Slot) -> str:
+        return "done" if await _save_halves(ctx, nfl_season_year(_now())) else "empty"
+
+
+class HalfStatsHistoryJob:
+    name = "half_stats_history"
+    max_attempts = 1
+
+    def slots(self, now: datetime) -> list[Slot]:
+        return []  # manual only: python -m app.jobs half_stats_history
+
+    async def run(self, ctx: JobContext, slot: Slot) -> str:
+        saved = 0
+        for season in range(FIRST_SEASON, nfl_season_year(_now()) + 1):
+            saved += await _save_halves(ctx, season)
+        return "done" if saved else "empty"
 
 
 class TeamStatsJob:
@@ -167,6 +222,8 @@ class WeatherJob:
 CONTEXT_JOBS = [
     TeamStatsJob(),
     TeamStatsHistoryJob(),
+    HalfStatsJob(),
+    HalfStatsHistoryJob(),
     InjuriesJob(),
     NflOfficialInjuriesJob(),
     WeatherJob(),

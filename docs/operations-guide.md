@@ -44,8 +44,8 @@ statistically honest context, not betting advice.
 3. `alembic upgrade head`
 4. `python -m app.jobs seed`, then `python -m app.jobs nfl_history`, then
    `python -m app.jobs espn_scoreboard`, then `python -m app.jobs espn_closes`, then (once)
-   `python -m app.jobs team_stats_history`, then `python -m app.jobs injuries` and
-   `python -m app.jobs weather`
+   `python -m app.jobs team_stats_history`, then (once) `python -m app.jobs half_stats_history`,
+   then `python -m app.jobs injuries` and `python -m app.jobs weather`
 5. `uvicorn app.main:app --app-dir backend --reload --port 8000`, and `npm run dev` in `frontend/`
 6. Open `http://localhost:5173/nfl`. The odds board is at `/odds`.
 7. Scheduled jobs: in production cron-job.org runs `run-due` on Fly (below). For a local-only
@@ -73,7 +73,18 @@ starting QB is on the report), weather, and head-to-head. Everything shown is co
 what was known before kickoff, and each tab says when its data was last refreshed. This is
 context, not betting advice. Sources: nflverse team stats (daily), ESPN injuries (daily) and
 Open-Meteo forecasts (every 3 hours); all free, none need a key. The scheduled `run-due` picks
-up `team_stats`, `injuries` and `weather` on its own; `team_stats_history` is manual.
+up `team_stats`, `half_stats`, `injuries` and `weather` on its own; `team_stats_history` and
+`half_stats_history` are manual.
+
+**First half (NFL).** `half_stats` reads nflverse's play-by-play (daily; about 40 MB for a season, so it
+is streamed to `data/raw/nflverse/play_by_play_<season>.csv` and parsed from disk, never held in memory
+on the 512 MB Fly machine) and stores, per team and game, the halftime score, who scored first and the
+team's first-half offense in `game_half_stats` (run `alembic upgrade head` for migration 0012). The
+matchup page's First half tab and `week_matchups_html.py` read it: first-half points, margin and EPA
+with league ranks, the second-half margin, and what happened after leading, trailing or tying at the
+half. Only final games before kickoff count. Turnovers are scrimmage plays only, as in the Efficiency
+tab. The halftime score is the score on the second-half kickoff row, because nflverse's running totals
+are the score at the *start* of a play.
 
 **Official injury reports.** `nfl_injuries_official` reads nflverse's injury file (daily, and again at 18:00 Central on Wednesday to Friday) once the file has reached the week about to be played, and `nba_injuries_official` reads the league's injury-report PDF every hour from 10:00 to 22:00 Central (the newest of the last four quarter hours; this is why the project depends on `pypdf`). Each source keeps its own snapshots and the matchup page merges them by player: the league's report wins and ESPN fills in the rest. For the NBA, `nba_player_stats` (daily, from stats.nba.com) finds each team's three players with the most minutes per game (last season's until a team has played 10 games); the slate card and the Injuries tab flag a team whose star is Out or Doubtful and mark one who is Questionable. A game that carries bets shows "N bets · M open" and its profit after fees once settled. Run `alembic upgrade head` once for the new `player_season_stats` table.
 

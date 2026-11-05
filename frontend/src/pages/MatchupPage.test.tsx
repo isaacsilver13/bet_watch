@@ -4,8 +4,9 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  fetchContext, fetchGame, formatMetric, formatTally, isStale, METRIC_ROWS,
-  type ContextResponse, type RecordSet, type TeamContext,
+  FIRST_HALF_ROWS, fetchContext, fetchGame, formatHalftimeRecord, formatMetric, formatScoredFirst,
+  formatSigned, formatTally, isStale, METRIC_ROWS,
+  type ContextResponse, type FirstHalf, type RecordSet, type TeamContext,
 } from "../lib/matchup";
 import { fetchLines, type LinesResponse } from "../lib/lines";
 import type { SlateGame } from "../lib/slate";
@@ -84,6 +85,44 @@ function context(overrides: Partial<ContextResponse> = {}): ContextResponse {
     ...overrides,
   };
 }
+
+const metric = (value: number, rank: number) => ({ value, rank, of: 32 });
+
+function firstHalf(extra: Partial<FirstHalf> = {}): FirstHalf {
+  return {
+    games: 3,
+    metrics: {
+      h1_points_for_pg: metric(9, 25), h1_points_against_pg: metric(11.3, 20),
+      h1_margin_pg: metric(-2.3, 24), h1_off_epa_play: metric(0.103, 9),
+      h1_def_epa_play: metric(0.123, 28), h1_turnovers_pg: metric(0.33, 7),
+    },
+    second_half_margin_pg: 2.3, recent_margin_pg: -2.3,
+    halftime: { led: tally(0, 0), tied: tally(1, 0), trailed: tally(1, 1) },
+    scored_first: { games: 1, of: 3, record: tally(1, 0) },
+    ...extra,
+  };
+}
+
+function withFirstHalf(): ContextResponse {
+  const base = context();
+  return {
+    ...base,
+    home: { ...base.home, first_half: firstHalf() },
+    away: {
+      ...base.away,
+      first_half: firstHalf({
+        games: 4,
+        metrics: { h1_margin_pg: metric(4, 2), h1_points_for_pg: metric(14, 3) },
+        second_half_margin_pg: -1.5, recent_margin_pg: 6,
+        halftime: { led: tally(3, 0), tied: tally(0, 0), trailed: tally(0, 1) },
+        scored_first: { games: 3, of: 4, record: tally(2, 1) },
+      }),
+    },
+    data_as_of: { ...base.data_as_of, first_half: new Date().toISOString() },
+  };
+}
+
+const rowOf = (label: string) => screen.getByRole("rowheader", { name: label }).closest("tr") as HTMLElement;
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -168,6 +207,59 @@ describe("MatchupPage", () => {
     expect(screen.queryByText("Yards / play")).not.toBeInTheDocument();  // not in the data
   });
 
+  it("shows the first-half tab with ranks, the halftime-to-final splits and who scored first", async () => {
+    vi.mocked(fetchGame).mockResolvedValue(GAME);
+    vi.mocked(fetchContext).mockResolvedValue(withFirstHalf());
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "First half" }));
+    expect(await screen.findByText(/Data as of/)).toBeInTheDocument();
+    expect(rowOf("Games")).toHaveTextContent("43");  // SEA (away) 4, DEN (home) 3
+    expect(rowOf("1H margin / game")).toHaveTextContent("+4.0 (#2 of 32)-2.3 (#24 of 32)");
+    expect(rowOf("1H points / game")).toHaveTextContent("14.0 (#3 of 32)9.0 (#25 of 32)");
+    expect(rowOf("1H offense EPA / play")).toHaveTextContent("—+0.103 (#9 of 32)");  // SEA has none
+    expect(rowOf("1H defense EPA / play allowed")).toHaveTextContent("—+0.123 (#28 of 32)");
+    expect(rowOf("1H turnovers / game")).toHaveTextContent("—0.33 (#7 of 32)");
+    expect(screen.queryByRole("rowheader", { name: "1H takeaways / game" })).not.toBeInTheDocument();
+    expect(rowOf("1H margin / game, last 5")).toHaveTextContent("+6.0-2.3");
+    expect(rowOf("2H margin / game")).toHaveTextContent("-1.5+2.3");
+    expect(rowOf("Won / lost after leading at the half")).toHaveTextContent("3-0—");
+    expect(rowOf("Won / lost after trailing at the half")).toHaveTextContent("0-11-1");
+    expect(rowOf("Won / lost after tying at the half")).toHaveTextContent("—1-0");
+    expect(rowOf("Scored first")).toHaveTextContent(
+      "3 of 4 games · 2-1 when they did1 of 3 games · 1-0 when they did");
+    expect(screen.getByText(/Ranks are of 32 teams/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Recent games")).toBeInTheDocument();  // a context tab
+  });
+
+  it("says when no first-half data is loaded and dashes a team with no games", async () => {
+    vi.mocked(fetchGame).mockResolvedValue(GAME);
+    vi.mocked(fetchContext).mockResolvedValue(context());  // neither team has first_half
+    const view = renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "First half" }));
+    expect(await screen.findByText("No first-half data loaded for this season yet.")).toBeInTheDocument();
+    view.unmount();
+
+    const oneSided = withFirstHalf();
+    oneSided.away = { ...oneSided.away, first_half: null };  // e.g. a team with no final game yet
+    vi.mocked(fetchContext).mockResolvedValue(oneSided);
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "First half" }));
+    await screen.findByRole("rowheader", { name: "Games" });
+    expect(rowOf("Games")).toHaveTextContent("03");
+    expect(rowOf("Won / lost after trailing at the half")).toHaveTextContent("—1-1");
+    expect(rowOf("Scored first")).toHaveTextContent("—1 of 3 games · 1-0 when they did");
+  });
+
+  it("flags a stale first-half load", async () => {
+    vi.mocked(fetchGame).mockResolvedValue(GAME);
+    const stale = withFirstHalf();
+    stale.data_as_of.first_half = new Date(Date.now() - 10 * 24 * 3_600_000).toISOString();
+    vi.mocked(fetchContext).mockResolvedValue(stale);
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "First half" }));
+    expect(await screen.findByText(/· stale/)).toBeInTheDocument();
+  });
+
   it("flags a starting quarterback on the injury report", async () => {
     vi.mocked(fetchGame).mockResolvedValue(GAME);
     vi.mocked(fetchContext).mockResolvedValue(context());
@@ -243,6 +335,37 @@ describe("MatchupPage", () => {
     vi.mocked(fetchContext).mockRejectedValue(new Error("Context request failed with status 404"));
     renderPage();
     expect(await screen.findByRole("alert")).toHaveTextContent("404");
+  });
+});
+
+describe("first-half helpers", () => {
+  it("formats signed per-game numbers, halftime records and the scored-first line", () => {
+    expect(formatSigned(1.76)).toBe("+1.8");
+    expect(formatSigned(-2.34)).toBe("-2.3");
+    expect(formatSigned(0)).toBe("0.0");
+    expect(formatSigned(null)).toBe("—");
+    expect(formatSigned(0.1234, 3)).toBe("+0.123");
+    expect(formatHalftimeRecord(tally(0, 0))).toBe("—");  // never happened
+    expect(formatHalftimeRecord(tally(4, 1))).toBe("4-1");
+    expect(formatHalftimeRecord(tally(1, 1, 1))).toBe("1-1-1");  // a tie at the end is a push
+    expect(formatScoredFirst({ games: 0, of: 0, record: tally(0, 0) })).toBe("—");
+    expect(formatScoredFirst({ games: 2, of: 5, record: tally(2, 0) })).toBe("2 of 5 games · 2-0 when they did");
+  });
+
+  it("has a row definition for each first-half metric the API sends", () => {
+    expect(FIRST_HALF_ROWS.map((row) => row.key)).toEqual([
+      "h1_points_for_pg", "h1_points_against_pg", "h1_margin_pg", "h1_off_epa_play", "h1_def_epa_play",
+      "h1_off_pass_epa_play", "h1_off_rush_epa_play", "h1_def_pass_epa_play", "h1_def_rush_epa_play",
+      "h1_turnovers_pg", "h1_takeaways_pg",
+    ]);
+    const margin = FIRST_HALF_ROWS.find((row) => row.key === "h1_margin_pg")!;
+    expect(formatMetric({ value: 3.5, rank: 1, of: 32 }, margin)).toBe("+3.5 (#1 of 32)");
+  });
+
+  it("treats first-half data as stale after eight days like the other season tables", () => {
+    const now = Date.parse("2026-11-05T12:00:00Z");
+    expect(isStale("2026-11-04T12:00:00Z", "first_half", now)).toBe(false);
+    expect(isStale("2026-10-20T12:00:00Z", "first_half", now)).toBe(true);
   });
 });
 

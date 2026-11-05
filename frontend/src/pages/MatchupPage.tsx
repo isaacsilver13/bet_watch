@@ -6,9 +6,13 @@ import { AppHeader } from "../components/AppHeader";
 import { GlassCard } from "../components/GlassCard";
 import { LinesPanel } from "../components/LinesPanel";
 import {
+  FIRST_HALF_ROWS,
   fetchContext,
   fetchGame,
+  formatHalftimeRecord,
   formatMetric,
+  formatScoredFirst,
+  formatSigned,
   formatTally,
   isStale,
   metricRowsFor,
@@ -19,7 +23,7 @@ import {
 } from "../lib/matchup";
 import { formatSpread, slatePath, weatherText, type SlateGame } from "../lib/slate";
 
-const TAB_IDS = ["lines", "records", "efficiency", "situation", "injuries", "h2h"] as const;
+const TAB_IDS = ["lines", "records", "efficiency", "first_half", "situation", "injuries", "h2h"] as const;
 type TabId = (typeof TAB_IDS)[number];
 interface TabSpec { id: TabId; label: string; asOf: string | null }
 // The data behind a tab has the same id in both sports; only its name differs.
@@ -27,11 +31,12 @@ const NFL_TABS: TabSpec[] = [
   { id: "lines", label: "Lines", asOf: null },
   { id: "records", label: "Records", asOf: "records" },
   { id: "efficiency", label: "Efficiency", asOf: "efficiency" },
+  { id: "first_half", label: "First half", asOf: "first_half" },
   { id: "situation", label: "Situation", asOf: "situational" },
   { id: "injuries", label: "Injuries", asOf: "injuries" },
   { id: "h2h", label: "Head-to-head", asOf: "records" },
 ];
-const NBA_TABS: TabSpec[] = NFL_TABS.map((tab) =>
+const NBA_TABS: TabSpec[] = NFL_TABS.filter((tab) => tab.id !== "first_half").map((tab) =>
   tab.id === "efficiency" ? { ...tab, label: "Ratings" }
     : tab.id === "situation" ? { ...tab, label: "Schedule" }
       : tab,
@@ -104,6 +109,43 @@ function EfficiencyPanel({ ctx }: { ctx: ContextResponse }) {
         home: formatMetric(ctx.home.efficiency[row.key], row),
       }))}
     />
+  );
+}
+
+function FirstHalfPanel({ ctx }: { ctx: ContextResponse }) {
+  const { away, home } = ctx;
+  if (!away.first_half && !home.first_half) {
+    return <p className="empty-grid">No first-half data loaded for this season yet.</p>;
+  }
+  const both = (read: (team: TeamContext) => string) => ({ away: read(away), home: read(home) });
+  const rank = (team: TeamContext) => team.first_half?.metrics.h1_margin_pg?.of;
+  const metricRows = FIRST_HALF_ROWS.filter(
+    (row) => away.first_half?.metrics[row.key] || home.first_half?.metrics[row.key],
+  ).map((row) => ({
+    label: row.label,
+    away: formatMetric(away.first_half?.metrics[row.key], row),
+    home: formatMetric(home.first_half?.metrics[row.key], row),
+  }));
+  const rows = [
+    { label: "Games", ...both((t) => String(t.first_half?.games ?? 0)) },
+    ...metricRows.slice(0, 3),
+    { label: `1H margin / game, last ${ctx.last_n}`, ...both((t) => formatSigned(t.first_half?.recent_margin_pg)) },
+    { label: "2H margin / game", ...both((t) => formatSigned(t.first_half?.second_half_margin_pg)) },
+    ...metricRows.slice(3),
+    { label: "Won / lost after leading at the half", ...both((t) => t.first_half ? formatHalftimeRecord(t.first_half.halftime.led) : "—") },
+    { label: "Won / lost after trailing at the half", ...both((t) => t.first_half ? formatHalftimeRecord(t.first_half.halftime.trailed) : "—") },
+    { label: "Won / lost after tying at the half", ...both((t) => t.first_half ? formatHalftimeRecord(t.first_half.halftime.tied) : "—") },
+    { label: "Scored first", ...both((t) => t.first_half ? formatScoredFirst(t.first_half.scored_first) : "—") },
+  ];
+  const of = rank(away) ?? rank(home);
+  return (
+    <>
+      <TwoTeamTable ctx={ctx} rows={rows} />
+      <p className="prediction-disclosure">
+        First-half stats from nflverse play-by-play, final games before kickoff.
+        {of ? ` Ranks are of ${of} teams.` : ""} Samples are small early in the season.
+      </p>
+    </>
   );
 }
 
@@ -318,6 +360,7 @@ export function MatchupPage() {
           <FreshnessLine asOf={context.data.data_as_of[active.asOf]} keyName={active.asOf} />
           {tab === "records" && <RecordsPanel ctx={context.data} />}
           {tab === "efficiency" && <EfficiencyPanel ctx={context.data} />}
+          {tab === "first_half" && <FirstHalfPanel ctx={context.data} />}
           {tab === "situation" && <SituationPanel ctx={context.data} />}
           {tab === "injuries" && <InjuriesPanel ctx={context.data} />}
           {tab === "h2h" && <HeadToHeadPanel ctx={context.data} />}

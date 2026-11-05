@@ -26,6 +26,30 @@ class MetricView(BaseModel):
     of: int
 
 
+class HalftimeView(BaseModel):
+    """Final results of the games a team led, was tied, or trailed at the half. win/loss/push is
+    the game's result for this team, so `led` is "won X, lost Y after leading at the half"."""
+
+    led: TallyView
+    tied: TallyView
+    trailed: TallyView
+
+
+class ScoredFirstView(BaseModel):
+    games: int  # games this team scored first in
+    of: int  # games where someone had scored by the final play
+    record: TallyView  # the game results when this team scored first
+
+
+class FirstHalfView(BaseModel):
+    games: int
+    metrics: dict[str, MetricView]  # h1_* keys, ranked 1 = best of the league
+    second_half_margin_pg: Optional[float]
+    recent_margin_pg: Optional[float]  # first-half margin over the last `last_n` games
+    halftime: HalftimeView
+    scored_first: ScoredFirstView
+
+
 class SituationView(BaseModel):
     rest_days: Optional[int]  # days between games; the NFL's short week and bye, the NBA's b2b
     short_week: bool
@@ -61,6 +85,7 @@ class TeamContext(BaseModel):
     injuries: list[InjuryView]
     qb_flag: Optional[QbFlagView]
     star_flag: Optional[StarFlagView] = None
+    first_half: Optional[FirstHalfView] = None  # NFL only; None until play-by-play is loaded
 
 
 class MeetingView(BaseModel):
@@ -89,4 +114,5 @@ class ContextResponse(BaseModel):
     home: TeamContext
     away: TeamContext
     head_to_head: HeadToHeadView
-    data_as_of: dict[str, Optional[datetime]]  # records, efficiency, situational, injuries
+    # records, efficiency, first_half, situational, injuries
+    data_as_of: dict[str, Optional[datetime]]

@@ -204,6 +204,24 @@ class TeamGameStat(Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class GameHalfStat(Base):
+    """One team's first half of one game: the halftime score, who scored first, and the team's
+    first-half offense (nflverse play-by-play). Kept apart from `team_game_stats`, whose JSON the
+    daily nflverse team-stats job rewrites wholesale."""
+
+    __tablename__ = "game_half_stats"
+    __table_args__ = (UniqueConstraint("game_id", "team_id", name="uq_game_half_stats_game_team"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), nullable=False)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
+    points_for_1h: Mapped[int] = mapped_column(Integer, nullable=False)
+    points_against_1h: Mapped[int] = mapped_column(Integer, nullable=False)
+    scored_first: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    stats: Mapped[dict] = mapped_column(JSON, nullable=False)  # first-half offense
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class Injury(Base):
     """One row per reportable player per snapshot; a snapshot is every row sharing observed_at."""
 
