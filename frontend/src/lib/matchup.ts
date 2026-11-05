@@ -30,6 +30,20 @@ export interface Injury {
 
 export interface QbFlag { player: string; status: string }
 
+/** Final results of the games a team led, was tied, or trailed at the half (win = won the game). */
+export interface Halftime { led: Tally; tied: Tally; trailed: Tally }
+export interface ScoredFirst { games: number; of: number; record: Tally }
+
+/** NFL only: the first-half profile from play-by-play, season to date. */
+export interface FirstHalf {
+  games: number;
+  metrics: Record<string, Metric>;
+  second_half_margin_pg: number | null;
+  recent_margin_pg: number | null;
+  halftime: Halftime;
+  scored_first: ScoredFirst;
+}
+
 export interface TeamContext {
   team: SlateTeam;
   records: Record<string, RecordSet>;
@@ -38,6 +52,7 @@ export interface TeamContext {
   injuries: Injury[];
   qb_flag: QbFlag | null;
   star_flag?: StarFlag | null;
+  first_half?: FirstHalf | null;
 }
 
 export interface Meeting {
@@ -113,6 +128,37 @@ export const METRIC_ROWS: MetricRow[] = [
   { key: "sacks_pg", label: "Sacks / game", decimals: 2 },
 ];
 
+/** First-half rows, in display order. Ranks already account for which direction is better. */
+export const FIRST_HALF_ROWS: MetricRow[] = [
+  { key: "h1_points_for_pg", label: "1H points / game", decimals: 1 },
+  { key: "h1_points_against_pg", label: "1H points allowed / game", decimals: 1 },
+  { key: "h1_margin_pg", label: "1H margin / game", decimals: 1, signed: true },
+  { key: "h1_off_epa_play", label: "1H offense EPA / play", decimals: 3, signed: true },
+  { key: "h1_def_epa_play", label: "1H defense EPA / play allowed", decimals: 3, signed: true },
+  { key: "h1_off_pass_epa_play", label: "1H pass EPA / play", decimals: 3, signed: true },
+  { key: "h1_off_rush_epa_play", label: "1H rush EPA / play", decimals: 3, signed: true },
+  { key: "h1_def_pass_epa_play", label: "1H pass EPA / play allowed", decimals: 3, signed: true },
+  { key: "h1_def_rush_epa_play", label: "1H rush EPA / play allowed", decimals: 3, signed: true },
+  { key: "h1_turnovers_pg", label: "1H turnovers / game", decimals: 2 },
+  { key: "h1_takeaways_pg", label: "1H takeaways / game", decimals: 2 },
+];
+
+/** "+1.8" / "-2.3" / "0.0", or a dash when there is no value. */
+export function formatSigned(value: number | null | undefined, decimals = 1): string {
+  if (value === null || value === undefined) return "—";
+  return `${value > 0 ? "+" : ""}${value.toFixed(decimals)}`;
+}
+
+/** A halftime state's final results as "W-L" ("W-L-T" with ties), a dash when it never happened. */
+export function formatHalftimeRecord(tally: Tally): string {
+  return tally.win + tally.loss + tally.push === 0 ? "—" : formatTally(tally);
+}
+
+export function formatScoredFirst(scored: ScoredFirst): string {
+  if (scored.of === 0) return "—";
+  return `${scored.games} of ${scored.of} games · ${formatTally(scored.record)} when they did`;
+}
+
 /** NBA team ratings and four factors, from stats.nba.com game logs. */
 export const NBA_METRIC_ROWS: MetricRow[] = [
   { key: "net_rtg", label: "Net rating", decimals: 1, signed: true },
@@ -143,6 +189,7 @@ export function formatMetric(metric: Metric | undefined, row: MetricRow): string
 export const STALE_AFTER_HOURS: Record<string, number> = {
   records: 24 * 8,
   efficiency: 24 * 8,
+  first_half: 24 * 8,
   situational: 24 * 8,
   injuries: 36,
 };

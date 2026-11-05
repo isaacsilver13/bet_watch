@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from app.api.slate import get_now, get_session_factory
 from app.ingest.espn import parse_injuries, parse_scoreboard
 from app.ingest.nflverse import parse_games_csv
+from app.ingest.nflverse_pbp import HalfRecord
 from app.ingest.nflverse_stats import TeamStatRecord
 from app.ingest.open_meteo import WeatherRecord
 from app.ingest.records import LineRecord
@@ -63,6 +64,26 @@ INJURIES = {"injuries": [
 ]}
 
 
+def _half(week, team, opponent, pf, pa, first, plays, epa, pass_plays, pass_epa, turnovers=0.0):
+    stats = {"plays": plays, "epa": epa, "pass_plays": pass_plays, "pass_epa": pass_epa,
+             "rush_plays": plays - pass_plays, "rush_epa": round(epa - pass_epa, 3),
+             "turnovers": turnovers}
+    return HalfRecord(2026, "REG", week, team, opponent, pf, pa, first, stats)
+
+
+# First halves of DEN's three games before the viewed one (final scores in HISTORY above):
+#   wk1 DEN 7-10 KC at the half, won 24-20 | wk2 DEN 10-14 at SEA, lost 17-27
+#   wk4 DEN 10-10 at LV, won 23-17 (DEN on the board first)
+HALVES = [
+    _half(1, "DEN", "KC", 7, 10, False, 20, 1.0, 12, 0.8),
+    _half(1, "KC", "DEN", 10, 7, True, 22, 4.62, 14, 4.0, turnovers=1.0),
+    _half(2, "SEA", "DEN", 14, 10, True, 20, 4.0, 12, 3.0),
+    _half(2, "DEN", "SEA", 10, 14, False, 25, 2.5, 15, 2.5, turnovers=1.0),
+    _half(4, "DEN", "LV", 10, 10, True, 24, 3.6, 14, 3.0),
+    _half(4, "LV", "DEN", 10, 10, False, 20, -1.0, 12, -0.6, turnovers=2.0),
+]
+
+
 def _offense(**overrides):
     base = {
         "attempts": 30.0, "sacks_suffered": 2.0, "carries": 18.0, "passing_epa": 6.4,
@@ -102,6 +123,7 @@ async def _setup(tmp_path, espn_close: bool = False, preseason: bool = False) ->
         TeamStatRecord(2026, "REG", 2, "SEA", "DEN", _offense(passing_epa=-1.0, rushing_epa=-1.0)),
         TeamStatRecord(2026, "REG", 2, "DEN", "SEA", _offense()),
     ], datetime(2026, 9, 22, tzinfo=timezone.utc))
+    await context.save_half_stats("nfl", HALVES, datetime(2026, 9, 23, tzinfo=timezone.utc))
     snapshots = [
         (datetime(2026, 10, 7, 20, tzinfo=timezone.utc), "Out"),  # older: superseded
         (datetime(2026, 10, 14, 20, tzinfo=timezone.utc), "Questionable"),  # the latest <= now
@@ -211,6 +233,33 @@ def test_efficiency_comes_from_stats_before_kickoff_with_ranks(tmp_path) -> None
     assert den["points_for_pg"]["value"] == 17.0  # DEN scored 17 in the week 2 game with stats
 
 
+def test_first_half_profile_ranks_the_teams_and_splits_halftime_from_the_final(tmp_path) -> None:
+    ctx = _context(_client(tmp_path))
+    den, sea = ctx["home"]["first_half"], ctx["away"]["first_half"]
+    m = den["metrics"]
+    assert den["games"] == 3
+    assert m["h1_points_for_pg"]["value"] == 9.0 and m["h1_points_against_pg"]["value"] == 11.333
+    assert m["h1_margin_pg"] == {"value": -2.333, "rank": 4, "of": 4}  # KC +3, SEA +4, LV 0
+    assert m["h1_off_epa_play"] == {"value": 0.103, "rank": 3, "of": 4}  # 7.1 EPA on 69 plays
+    assert m["h1_def_epa_play"]["value"] == 0.123  # faced 7.62 EPA on 62 plays
+    assert (m["h1_turnovers_pg"]["value"], m["h1_takeaways_pg"]["value"]) == (0.333, 1.0)
+    assert round(den["second_half_margin_pg"], 3) == 2.333  # finals sum to 0, halves to -7
+    assert round(den["recent_margin_pg"], 3) == -2.333  # last_n 5 covers all three games
+    half = den["halftime"]
+    assert (_tally(half["led"]), _tally(half["tied"]), _tally(half["trailed"])) == (
+        (0, 0, 0), (1, 0, 0), (1, 1, 0))  # came back at KC, tied at LV and won, lost at SEA
+    assert den["scored_first"]["games"] == 1 and den["scored_first"]["of"] == 3
+    assert _tally(den["scored_first"]["record"]) == (1, 0, 0)
+    assert _tally(sea["halftime"]["led"]) == (1, 0, 0) and sea["games"] == 1
+    assert ctx["data_as_of"]["first_half"].startswith("2026-09-23")
+
+
+def test_first_half_recent_margin_follows_last_n(tmp_path) -> None:
+    ctx = _context(_client(tmp_path), last_n=1)
+    assert ctx["home"]["first_half"]["recent_margin_pg"] == 0.0  # only wk4, tied 10-10
+    assert ctx["home"]["first_half"]["games"] == 3  # the season profile does not shrink
+
+
 def test_injuries_use_the_latest_snapshot_up_to_now_and_flag_the_starting_qb(tmp_path) -> None:
     ctx = _context(_client(tmp_path))
     den_injuries = ctx["home"]["injuries"]
@@ -229,6 +278,7 @@ def test_a_game_with_no_history_returns_empty_sections_not_an_error(tmp_path) ->
     assert _tally(ctx["home"]["records"]["season"]["su"]) == (0, 0, 0)
     assert ctx["home"]["situation"]["rest_days"] is None and ctx["head_to_head"]["meetings"] == []
     assert ctx["data_as_of"]["efficiency"].startswith("2026-09-22")  # league-wide table time
+    assert ctx["home"]["first_half"] is None and ctx["away"]["first_half"] is None
 
 
 def test_unknown_game_is_404_and_last_n_is_bounded(tmp_path) -> None:
@@ -254,6 +304,9 @@ def test_a_finished_game_shows_only_what_was_known_before_kickoff(tmp_path) -> N
     assert ctx["data_as_of"]["injuries"] is None
     assert den["situation"]["previous_opponent"] == "SEA"
     assert den["efficiency"]["off_epa_play"]["value"] == 0.104  # the wk2 stats were in by then
+    half = den["first_half"]  # wk1 and wk2 halves only: the wk4 half is this very game
+    assert half["games"] == 2 and half["metrics"]["h1_margin_pg"]["value"] == -3.5
+    assert _tally(half["halftime"]["trailed"]) == (1, 1, 0) and half["scored_first"]["games"] == 0
 
 
 def test_preseason_games_do_not_count_and_a_season_opener_has_no_travel_from_last_year(

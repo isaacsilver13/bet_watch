@@ -9,6 +9,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.analytics.efficiency import TeamGame, season_efficiency
+from app.analytics.first_half import FirstHalf, HalfGame, Outcome, season_first_half
 from app.analytics.injuries import InjuredPlayer, name_key, qb_flag
 from app.analytics.ratings import RatedGame, season_ratings
 from app.analytics.records import (
@@ -25,12 +26,15 @@ from app.analytics.stars import star_flag
 from app.api.slate import get_now, get_session_factory, load_slate_games, pick_lines
 from app.domain.matchup import (
     ContextResponse,
+    FirstHalfView,
+    HalftimeView,
     HeadToHeadView,
     InjuryView,
     MeetingView,
     MetricView,
     QbFlagView,
     RecordSetView,
+    ScoredFirstView,
     SituationView,
     TallyView,
     TeamContext,
@@ -38,7 +42,7 @@ from app.domain.matchup import (
 from app.domain.slate import SlateGame, StarFlagView, TeamView
 from app.storage.context_repository import ContextRepository
 from app.storage.games_repository import aware
-from app.storage.models import Game, GameLine, Team, TeamGameStat, Venue
+from app.storage.models import Game, GameHalfStat, GameLine, Team, TeamGameStat, Venue
 from app.storage.stars import season_stars
 
 router = APIRouter(prefix="/api/v1")
@@ -169,6 +173,56 @@ async def _efficiency_rows(session: AsyncSession, sport: str, season: int) -> li
     return rows.all()
 
 
+async def _half_rows(session: AsyncSession, season: int) -> list[tuple]:
+    rows = await session.execute(
+        select(GameHalfStat, Game)
+        .join(Game, Game.id == GameHalfStat.game_id)
+        .where(Game.sport == "nfl", Game.season == season, Game.status == "final")
+    )
+    return rows.all()
+
+
+def _half_game(stat: GameHalfStat, game: Game) -> HalfGame:
+    is_home = stat.team_id == game.home_team_id
+    return HalfGame(
+        game_id=game.id,
+        team_id=stat.team_id,
+        start_time=aware(game.start_time),
+        points_for_1h=stat.points_for_1h,
+        points_against_1h=stat.points_against_1h,
+        points_for=game.home_score if is_home else game.away_score,
+        points_against=game.away_score if is_home else game.home_score,
+        scored_first=stat.scored_first,
+        stats=stat.stats,
+    )
+
+
+def _outcome(value: Outcome) -> TallyView:
+    return TallyView(win=value.win, loss=value.loss, push=value.push)
+
+
+def _first_half_view(value: Optional[FirstHalf]) -> Optional[FirstHalfView]:
+    if value is None:
+        return None
+    return FirstHalfView(
+        games=value.games,
+        metrics={
+            name: MetricView(value=m.value, rank=m.rank, of=m.of)
+            for name, m in value.metrics.items()
+        },
+        second_half_margin_pg=value.second_half_margin_pg,
+        recent_margin_pg=value.recent_margin_pg,
+        halftime=HalftimeView(
+            led=_outcome(value.led), tied=_outcome(value.tied), trailed=_outcome(value.trailed)
+        ),
+        scored_first=ScoredFirstView(
+            games=value.scored_first_games,
+            of=value.scored_first_known,
+            record=_outcome(value.scored_first_record),
+        ),
+    )
+
+
 def _team_game(stat: TeamGameStat, game: Game) -> TeamGame:
     is_home = stat.team_id == game.home_team_id
     return TeamGame(
@@ -232,6 +286,11 @@ async def get_context(
             )
         stat_times = [
             aware(stat.fetched_at) for stat, g in stat_rows if aware(g.start_time) < kickoff
+        ]
+        half_rows = [] if is_nba else await _half_rows(session, game.season)
+        first_half = season_first_half([_half_game(s, g) for s, g in half_rows], kickoff, last_n)
+        half_times = [
+            aware(stat.fetched_at) for stat, g in half_rows if aware(g.start_time) < kickoff
         ]
         injuries, injuries_at = await ContextRepository(session_factory).injury_snapshot(
             game.sport, {home.id, away.id}, min(now, kickoff)
@@ -311,6 +370,7 @@ async def get_context(
             ],
             qb_flag=QbFlagView(player=flag.player, status=flag.status) if flag else None,
             star_flag=star_view,
+            first_half=_first_half_view(first_half.get(team.id)),
         )
 
     meetings = head_to_head(results, home.id, away.id, kickoff, last_n)
@@ -339,6 +399,7 @@ async def get_context(
         data_as_of={
             "records": max(prior_updates) if prior_updates else None,
             "efficiency": max(stat_times) if stat_times else None,
+            "first_half": max(half_times) if half_times else None,
             "situational": aware(game.updated_at),
             "injuries": injuries_at,
         },

@@ -3,12 +3,13 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from app.ingest.espn import parse_injuries, parse_scoreboard
+from app.ingest.nflverse_pbp import HalfRecord
 from app.ingest.nflverse_stats import TeamStatRecord
 from app.ingest.open_meteo import WeatherRecord
 from app.ingest.seed import seed_teams
 from app.storage.context_repository import ContextRepository
 from app.storage.games_repository import GamesRepository
-from app.storage.models import Game, Injury, Team, TeamGameStat, Venue, Weather
+from app.storage.models import Game, GameHalfStat, Injury, Team, TeamGameStat, Venue, Weather
 from sqlalchemy import func, select
 
 from tests.matchup_helpers import load_json, new_session_factory
@@ -156,5 +157,63 @@ def test_a_rematch_later_in_the_season_gets_its_own_stats(tmp_path) -> None:
             row = await session.scalar(select(TeamGameStat))
             game = await session.get(Game, row.game_id)
         assert (game.espn_id, game.week, row.stats) == ("900002", 12, {"attempts": 41.0})
+
+    asyncio.run(scenario())
+
+
+def _half(team="DEN", opponent="SEA", week=6, season_type="REG", season=2026, pf=3, pa=7,
+          first=True, **stats):
+    return HalfRecord(season, season_type, week, team, opponent, pf, pa, first,
+                      stats or {"plays": 3.0, "epa": -2.7})
+
+
+def test_half_stats_attach_to_the_game_for_either_team_and_resave_updates(tmp_path) -> None:
+    async def scenario() -> None:
+        factory, repo = await _loaded(tmp_path)
+        records = [_half(), _half("SEA", "DEN", pf=7, pa=3, first=False)]
+        result = await repo.save_half_stats("nfl", records, NOW)
+        assert (result.saved, result.unmatched) == (2, [])
+        assert await _count(factory, GameHalfStat) == 2
+        await repo.save_half_stats("nfl", [_half(pf=10, pa=7, plays=9.0)], NOW + timedelta(days=1))
+        async with factory() as session:
+            den = await session.scalar(
+                select(GameHalfStat).join(Team, Team.id == GameHalfStat.team_id)
+                .where(Team.abbr == "DEN")
+            )
+        assert await _count(factory, GameHalfStat) == 2  # updated in place, not duplicated
+        assert (den.points_for_1h, den.points_against_1h, den.scored_first) == (10, 7, True)
+        assert den.stats == {"plays": 9.0}
+        assert den.fetched_at.replace(tzinfo=timezone.utc) == NOW + timedelta(days=1)
+
+    asyncio.run(scenario())
+
+
+def test_half_stats_for_a_game_we_do_not_have_are_reported_not_stored(tmp_path) -> None:
+    async def scenario() -> None:
+        factory, repo = await _loaded(tmp_path)
+        result = await repo.save_half_stats("nfl", [_half(week=12), _half("XXX", "DEN")], NOW)
+        assert result.saved == 0 and len(result.unmatched) == 2
+        assert await _count(factory, GameHalfStat) == 0
+
+    asyncio.run(scenario())
+
+
+def test_postseason_half_stats_match_by_teams_not_by_nflverse_week_number(tmp_path) -> None:
+    async def scenario() -> None:
+        factory, repo = await _loaded(tmp_path)
+        result = await repo.save_half_stats(
+            "nfl", [_half(season=2025, season_type="POST", week=19)], NOW
+        )
+        assert (result.saved, result.unmatched) == (1, [])
+
+    asyncio.run(scenario())
+
+
+def test_half_stats_and_team_stats_do_not_overwrite_each_other(tmp_path) -> None:
+    async def scenario() -> None:
+        factory, repo = await _loaded(tmp_path)
+        await repo.save_half_stats("nfl", [_half()], NOW)
+        await repo.save_team_stats("nfl", [_stat()], NOW)  # the daily job rewrites team stats
+        assert await _count(factory, GameHalfStat) == 1 and await _count(factory, TeamGameStat) == 1
 
     asyncio.run(scenario())

@@ -1,5 +1,5 @@
 # ruff: noqa: E501  (inline HTML and CSS templates)
-"""A Covers-style page of one NFL week's matchups: lines, team stats, records, injuries, h2h.
+"""A Covers-style page of one NFL week's matchups: lines, team stats, first half, records, injuries, h2h.
 
 Reads the same data the /games/{id}/context endpoint serves (SELECTs only), so run it against any
 database the app is pointed at; it writes one standalone HTML file (no network, no assets).
@@ -90,6 +90,62 @@ def stats_table(c):
                         f'{chip(h["efficiency"].get(key), fmt)}</tr>')
     return ('<table class="cmp">' + "".join(rows) + "</table>"
             "<p class='note'>Chip = league rank of 32 (1 = best), regular season to date.</p>")
+
+
+FIRST_HALF_METRICS = [
+    ("First half", [("h1_points_for_pg", "1H points / game", "{:.1f}"), ("h1_points_against_pg", "1H points allowed / game", "{:.1f}"),
+                    ("h1_margin_pg", "1H margin / game", "{:+.1f}")]),
+    ("First-half EPA / play", [("h1_off_epa_play", "Offense", "{:+.3f}"), ("h1_def_epa_play", "Defense (lower is better)", "{:+.3f}"),
+                               ("h1_off_pass_epa_play", "Pass offense", "{:+.3f}"), ("h1_off_rush_epa_play", "Rush offense", "{:+.3f}")]),
+    ("First-half ball security", [("h1_turnovers_pg", "Turnovers / game", "{:.2f}"), ("h1_takeaways_pg", "Takeaways / game", "{:.2f}")]),
+]
+
+
+def signed(x):
+    return "-" if x is None else f"{x:+.1f}"
+
+
+def first_half_table(c):
+    a, h = c["away"], c["home"]
+    if not (a.get("first_half") or h.get("first_half")):
+        return "<p class='note'>No first-half data loaded yet.</p>"
+
+    def metrics(tm):
+        return (tm.get("first_half") or {}).get("metrics", {})
+
+    def plain(tm, read):
+        fh = tm.get("first_half")
+        return f'<td class="v">{read(fh) if fh else "-"}</td>'
+
+    def split(label, read):
+        return f'<tr>{plain(a, read)}<td class="lab">{label}</td>{plain(h, read)}</tr>'
+
+    def tally_cell(key):
+        return lambda fh: ("-" if sum(fh["halftime"][key].values()) == 0
+                           else tally(fh["halftime"][key]))
+
+    def first_cell(fh):
+        sf = fh["scored_first"]
+        return "-" if sf["of"] == 0 else f'{sf["games"]} of {sf["of"]} ({tally(sf["record"])})'
+
+    rows = [f'<tr><th>{e(a["team"]["abbr"])}</th><th></th><th>{e(h["team"]["abbr"])}</th></tr>']
+    for group, items in FIRST_HALF_METRICS:
+        rows.append(f'<tr class="grp"><td colspan="3">{group}</td></tr>')
+        for key, label, fmt in items:
+            rows.append(f'<tr>{chip(metrics(a).get(key), fmt)}<td class="lab">{label}</td>'
+                        f'{chip(metrics(h).get(key), fmt)}</tr>')
+        if group == "First half":
+            rows.append(split(f"1H margin, last {c['last_n']}", lambda fh: signed(fh["recent_margin_pg"])))
+            rows.append(split("2H margin / game", lambda fh: signed(fh["second_half_margin_pg"])))
+    rows.append('<tr class="grp"><td colspan="3">From the half to the final (W-L)</td></tr>')
+    rows.append(split("Led at the half", tally_cell("led")))
+    rows.append(split("Trailed at the half", tally_cell("trailed")))
+    rows.append(split("Tied at the half", tally_cell("tied")))
+    rows.append(split("Scored first (record when they did)", first_cell))
+    games = " vs ".join(f'{tm["team"]["abbr"]} {(tm.get("first_half") or {}).get("games", 0)}' for tm in (a, h))
+    return ('<table class="cmp">' + "".join(rows) + "</table>"
+            f"<p class='note'>Chip = league rank of 32 (1 = best), final games to date ({games}). "
+            "Small samples early in the season. Source: nflverse play-by-play.</p>")
 
 
 def records_table(c):
@@ -244,10 +300,11 @@ def card(item):
 <div class="cols"><section><h3>Betting lines</h3>{line_box(g)}</section>
 <section><h3>Schedule spot</h3>{situation(c)}</section></div>
 <section><h3>Team stats</h3>{stats_table(c)}</section>
+<section><h3>First half</h3>{first_half_table(c)}</section>
 <section><h3>Records</h3>{records_table(c)}</section>
 <section><h3>Injuries</h3>{injuries(c)}</section>
 <section><h3>Head to head</h3>{h2h(c)}</section>
-<footer class="note">Data as of: records {stamp(d['records'])} · injuries {stamp(d['injuries'])} ET</footer></article>"""
+<footer class="note">Data as of: records {stamp(d['records'])} · first half {stamp(d.get('first_half'))} · injuries {stamp(d['injuries'])} ET</footer></article>"""
 
 
 def board_row(item):
